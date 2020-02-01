@@ -1,3 +1,11 @@
+// Convert a test log from a Raft run into an HTML file with a colorful
+// table for easier tracking of the log events.
+//
+// Note: by "log" here we mean the logging messages emitted by our Raft code,
+// not the raft log that stores replicated data.
+//
+// Eli Bendersky [https://eli.thegreenplace.net]
+// This code is in the public domain.
 package main
 
 import (
