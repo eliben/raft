@@ -215,7 +215,7 @@ func emitTestViz(dirname string, tl TestLog) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("... Emitted", filename)
+	fmt.Println("... Emitted", "file://"+filename)
 }
 
 func parseTestLogs(rd io.Reader) []TestLog {
