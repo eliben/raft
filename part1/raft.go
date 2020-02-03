@@ -42,11 +42,20 @@ func (s CMState) String() string {
 	}
 }
 
+// ConsensusModule (CM) implements a single node of Raft consensus.
 type ConsensusModule struct {
-	mu      sync.Mutex
-	id      int
+	// mu protects concurrent access to a CM.
+	mu sync.Mutex
+
+	// id is the server ID of this CM.
+	id int
+
+	// peerIds lists the IDs of our peers in the cluster.
 	peerIds []int
-	server  *Server
+
+	// server is the server containing this CM. It's used to issue RPC calls
+	// to peers.
+	server *Server
 
 	// Persistent Raft state on all servers
 	currentTerm int
@@ -54,20 +63,19 @@ type ConsensusModule struct {
 	log         []LogEntry
 
 	// Volatile Raft state on all servers
-	commitIndex int
-	lastApplied int
+	commitIndex        int
+	lastApplied        int
+	state              CMState
+	electionResetEvent time.Time
 
 	// Volatile Raft state on leaders
 	nextIndex  map[int]int
 	matchIndex map[int]int
-
-	state              CMState
-	electionResetEvent time.Time
 }
 
-// NewConsensusModule creates a new consensus module with the given ID, list of
-// peer IDs and server. The ready channel signals the CM that all peers are
-// connected and it's safe to start its state machine.
+// NewConsensusModule creates a new CM with the given ID, list of peer IDs and
+// server. The ready channel signals the CM that all peers are connected and
+// it's safe to start its state machine.
 func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan interface{}) *ConsensusModule {
 	cm := new(ConsensusModule)
 	cm.id = id
@@ -115,23 +123,16 @@ func (cm *ConsensusModule) dlog(format string, args ...interface{}) {
 	}
 }
 
+// See figure 2 in the paper.
 type RequestVoteArgs struct {
-	// Candidate's term
-	Term int
-
-	// ID of candidate requesting vote
-	CandidateId int
-
-	// Index and term of candidate's last log entry (paper $5.4)
+	Term         int
+	CandidateId  int
 	LastLogIndex int
 	LastLogTerm  int
 }
 
 type RequestVoteReply struct {
-	// Current term, for candidate to update itself
-	Term int
-
-	// True means candidate received vote from this peer
+	Term        int
 	VoteGranted bool
 }
 
@@ -162,6 +163,7 @@ func (cm *ConsensusModule) RequestVote(args RequestVoteArgs, reply *RequestVoteR
 	return nil
 }
 
+// See figure 2 in the paper.
 type AppendEntriesArgs struct {
 	Term     int
 	LeaderId int
@@ -229,7 +231,11 @@ func (cm *ConsensusModule) runElectionTimer() {
 	cm.mu.Unlock()
 	cm.dlog("election timer started (%v), term=%d", timeoutDuration, termStarted)
 
-	// EXPLAIN: why this is in a loop... sliding window, etc.
+	// This loops until either:
+	// - we discover the election timer is no longer needed, or
+	// - the election timer expires and this CM becomes a candidate
+	// In a follower, this typically keeps running in the background for the
+	// duration of the CM's lifetime.
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
