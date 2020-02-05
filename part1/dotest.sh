@@ -1,6 +1,5 @@
 #!/bin/bash
-set -x
-set -e
+set -ex
 
 logfile=~/temp/rlog
 
