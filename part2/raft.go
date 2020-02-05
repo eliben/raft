@@ -126,7 +126,14 @@ func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 // read the commit channel passed in the constructor to be notified of new
 // committed entries.
 func (cm *ConsensusModule) Submit(command interface{}) {
-	// TODO: do it
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.dlog("Submit received by %v: %v", cm.state, command)
+	if cm.state == Leader {
+		cm.log = append(cm.log, LogEntry{Command: command, Term: cm.currentTerm})
+		cm.dlog("... log=%v", cm.log)
+	}
 }
 
 // Stop stops this CM, cleaning up its state. This method returns quickly, but
