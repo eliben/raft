@@ -99,10 +99,7 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	id = cm.id
-	term = cm.currentTerm
-	isLeader = cm.state == Leader
-	return
+	return cm.id, cm.currentTerm, cm.state == Leader
 }
 
 // Stop stops this CM, cleaning up its state. This method returns quickly, but
