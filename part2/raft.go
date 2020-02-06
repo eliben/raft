@@ -70,8 +70,13 @@ type ConsensusModule struct {
 	server *Server
 
 	// commitChan is the channel where this CM is going to report committed log
-	// entries.
+	// entries. It's passed in by the client during construction.
 	commitChan chan<- CommitEntry
+
+	// newCommitReadyChan is an internal notification channel used by goroutines
+	// that commit new entries to the log to notify that these entries may be sent
+	// on commitChan.
+	newCommitReadyChan chan struct{}
 
 	// Persistent Raft state on all servers
 	currentTerm int
@@ -98,16 +103,21 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 	cm.peerIds = peerIds
 	cm.server = server
 	cm.commitChan = commitChan
+	cm.newCommitReadyChan = make(chan struct{}, 16)
 	cm.state = Follower
 	cm.votedFor = -1
+	cm.commitIndex = -1
+	cm.lastApplied = -1
 
 	go func() {
-		// The CM is quiescent until ready is signaled; then, it starts a countdown
+		// The CM is dormant until ready is signaled; then, it starts a countdown
 		// for leader election.
 		<-ready
 		cm.electionResetEvent = time.Now()
 		cm.runElectionTimer()
 	}()
+
+	go cm.commitChanSender()
 
 	return cm
 }
@@ -148,6 +158,7 @@ func (cm *ConsensusModule) Stop() {
 	defer cm.mu.Unlock()
 	cm.state = Dead
 	cm.dlog("becomes Dead")
+	close(cm.newCommitReadyChan)
 }
 
 // dlog logs a debugging message is DebugCM > 0.
@@ -275,7 +286,7 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 			if args.LeaderCommit > cm.commitIndex {
 				cm.commitIndex = intMin(args.LeaderCommit, len(cm.log)-1)
 				cm.dlog("... setting commitIndex=%d", cm.commitIndex)
-				//cm.notifyApplyCh <- struct{}{} TODO
+				cm.newCommitReadyChan <- struct{}{}
 			}
 		}
 	}
@@ -358,15 +369,21 @@ func (cm *ConsensusModule) startElection() {
 
 	// Send RequestVote RPCs to all other servers concurrently.
 	for _, peerId := range cm.peerIds {
-		go func(peer int) {
-			args := RequestVoteArgs{
-				Term:        savedCurrentTerm,
-				CandidateId: cm.id,
-			}
-			var reply RequestVoteReply
+		go func(peerId int) {
+			cm.mu.Lock()
+			savedLastLogIndex, savedLastLogTerm := cm.lastLogIndexAndTerm()
+			cm.mu.Unlock()
 
-			cm.dlog("sending RequestVote to %d: %+v", peer, args)
-			if err := cm.server.Call(peer, "ConsensusModule.RequestVote", args, &reply); err == nil {
+			args := RequestVoteArgs{
+				Term:         savedCurrentTerm,
+				CandidateId:  cm.id,
+				LastLogIndex: savedLastLogIndex,
+				LastLogTerm:  savedLastLogTerm,
+			}
+
+			cm.dlog("sending RequestVote to %d: %+v", peerId, args)
+			var reply RequestVoteReply
+			if err := cm.server.Call(peerId, "ConsensusModule.RequestVote", args, &reply); err == nil {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()
 				cm.dlog("received RequestVoteReply %+v", reply)
@@ -496,7 +513,7 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 						}
 						if cm.commitIndex != savedCommitIndex {
 							cm.dlog("leader sets commitIndex := %d", cm.commitIndex)
-							//		rf.notifyApplyCh <- struct{}{} TODO
+							cm.newCommitReadyChan <- struct{}{}
 						}
 					} else {
 						cm.nextIndex[peerId] = ni - 1
@@ -518,6 +535,37 @@ func (cm *ConsensusModule) lastLogIndexAndTerm() (int, int) {
 	} else {
 		return -1, -1
 	}
+}
+
+// commitChanSender is responsible for sending committed entries on
+// cm.commitChan. It watches newCommitReadyChan for notifications and calculates
+// which new entries are ready to be sent. This method should run in a separate
+// background goroutine; cm.commitChan may be buffered and will limit how fast
+// the client consumes new committed entries. Returns when newCommitReadyChan is
+// closed.
+func (cm *ConsensusModule) commitChanSender() {
+	for range cm.newCommitReadyChan {
+		// Find which entries we have to apply.
+		cm.mu.Lock()
+		savedTerm := cm.currentTerm
+		savedLastApplied := cm.lastApplied
+		var entries []LogEntry
+		if cm.commitIndex > cm.lastApplied {
+			entries = cm.log[cm.lastApplied+1 : cm.commitIndex+1]
+			cm.lastApplied = cm.commitIndex
+		}
+		cm.mu.Unlock()
+		cm.dlog("commitChanSender entries=%v, savedLastApplied=%d", entries, savedLastApplied)
+
+		for i, entry := range entries {
+			cm.commitChan <- CommitEntry{
+				Command: entry.Command,
+				Index:   savedLastApplied + i + 1,
+				Term:    savedTerm,
+			}
+		}
+	}
+	cm.dlog("commitChanSender done")
 }
 
 func intMin(a, b int) int {
