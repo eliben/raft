@@ -124,8 +124,10 @@ func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 
 // Submit submits a new command to the CM. This function doesn't block; clients
 // read the commit channel passed in the constructor to be notified of new
-// committed entries.
-func (cm *ConsensusModule) Submit(command interface{}) {
+// committed entries. It returns true iff this CM is the leader - in which case
+// the command is accepted. When false is returned, the client will have to find
+// a different CM to submit this command to.
+func (cm *ConsensusModule) Submit(command interface{}) bool {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -133,7 +135,9 @@ func (cm *ConsensusModule) Submit(command interface{}) {
 	if cm.state == Leader {
 		cm.log = append(cm.log, LogEntry{Command: command, Term: cm.currentTerm})
 		cm.dlog("... log=%v", cm.log)
+		return true
 	}
+	return false
 }
 
 // Stop stops this CM, cleaning up its state. This method returns quickly, but
