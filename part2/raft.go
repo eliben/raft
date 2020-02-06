@@ -13,12 +13,9 @@ import (
 
 const DebugCM = 1
 
-type LogEntry struct {
-	Command interface{}
-	Term    int
-}
-
-// CommitEntry is the data reported by Raft to the commit channel.
+// CommitEntry is the data reported by Raft to the commit channel. Each commit
+// entry notifies the client that consensus was reached on a command and it can
+// be applied to the client's state machine.
 type CommitEntry struct {
 	// Command is the client command being committed.
 	Command interface{}
@@ -52,6 +49,11 @@ func (s CMState) String() string {
 	default:
 		panic("unreachable")
 	}
+}
+
+type LogEntry struct {
+	Command interface{}
+	Term    int
 }
 
 // ConsensusModule (CM) implements a single node of Raft consensus.
@@ -96,7 +98,8 @@ type ConsensusModule struct {
 
 // NewConsensusModule creates a new CM with the given ID, list of peer IDs and
 // server. The ready channel signals the CM that all peers are connected and
-// it's safe to start its state machine.
+// it's safe to start its state machine. commitChan is going to be used by the
+// CM to send log entries that have been committed by the Raft cluster.
 func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan interface{}, commitChan chan<- CommitEntry) *ConsensusModule {
 	cm := new(ConsensusModule)
 	cm.id = id
@@ -118,7 +121,6 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 	}()
 
 	go cm.commitChanSender()
-
 	return cm
 }
 
@@ -126,16 +128,13 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	id = cm.id
-	term = cm.currentTerm
-	isLeader = cm.state == Leader
-	return
+	return cm.id, cm.currentTerm, cm.state == Leader
 }
 
 // Submit submits a new command to the CM. This function doesn't block; clients
 // read the commit channel passed in the constructor to be notified of new
 // committed entries. It returns true iff this CM is the leader - in which case
-// the command is accepted. When false is returned, the client will have to find
+// the command is accepted. If false is returned, the client will have to find
 // a different CM to submit this command to.
 func (cm *ConsensusModule) Submit(command interface{}) bool {
 	cm.mu.Lock()
