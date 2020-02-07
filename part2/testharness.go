@@ -187,6 +187,7 @@ func sleepMs(n int) {
 func (h *Harness) collectCommits(i int) {
 	for c := range h.commitChans[i] {
 		h.mu.Lock()
+		tlog("collectCommits(%d) got %+v", i, c)
 		h.commits[i] = append(h.commits[i], c)
 		h.mu.Unlock()
 	}

@@ -111,6 +111,8 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 	cm.votedFor = -1
 	cm.commitIndex = -1
 	cm.lastApplied = -1
+	cm.nextIndex = make(map[int]int)
+	cm.matchIndex = make(map[int]int)
 
 	go func() {
 		// The CM is dormant until ready is signaled; then, it starts a countdown
