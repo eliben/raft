@@ -5,6 +5,7 @@ package raft
 import (
 	"log"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,12 +16,19 @@ func init() {
 }
 
 type Harness struct {
+	mu sync.Mutex
+
 	// cluster is a list of all the raft servers participating in a cluster.
 	cluster []*Server
 
 	// commitChans has a channel per server in cluster with the commi channel for
 	// that server.
 	commitChans []chan CommitEntry
+
+	// commits at index i holds the sequence of commits made by server i so far.
+	// It is populated by goroutines that listen on the corresponding commitChans
+	// channel.
+	commits [][]CommitEntry
 
 	// connected has a bool per server in cluster, specifying whether this server
 	// is currently connected to peers (if false, it's partitioned and no messages
@@ -37,6 +45,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 	ns := make([]*Server, n)
 	connected := make([]bool, n)
 	commitChans := make([]chan CommitEntry, n)
+	commits := make([][]CommitEntry, n)
 	ready := make(chan interface{})
 
 	// Create all Servers in this cluster, assign ids and peer ids.
@@ -64,13 +73,18 @@ func NewHarness(t *testing.T, n int) *Harness {
 	}
 	close(ready)
 
-	return &Harness{
+	h := &Harness{
 		cluster:     ns,
 		commitChans: commitChans,
+		commits:     commits,
 		connected:   connected,
 		n:           n,
 		t:           t,
 	}
+	for i := 0; i < n; i++ {
+		go h.collectCommits(i)
+	}
+	return h
 }
 
 // Shutdown shuts down all the servers in the harness and waits for them to
@@ -82,6 +96,9 @@ func (h *Harness) Shutdown() {
 	}
 	for i := 0; i < h.n; i++ {
 		h.cluster[i].Shutdown()
+	}
+	for i := 0; i < h.n; i++ {
+		close(h.commitChans[i])
 	}
 }
 
@@ -162,4 +179,15 @@ func tlog(format string, a ...interface{}) {
 
 func sleepMs(n int) {
 	time.Sleep(time.Duration(n) * time.Millisecond)
+}
+
+// collectCommits reads channel commitChans[i] and adds all received entries
+// to the corresponding commits[i]. It's blocking and should be run in a
+// separate goroutine. It returns when commitChans[i] is closed.
+func (h *Harness) collectCommits(i int) {
+	for c := range h.commitChans[i] {
+		h.mu.Lock()
+		h.commits[i] = append(h.commits[i], c)
+		h.mu.Unlock()
+	}
 }
