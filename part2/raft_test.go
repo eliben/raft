@@ -175,11 +175,49 @@ func TestCommitOneCommand(t *testing.T) {
 
 	origLeaderId, _ := h.CheckSingleLeader()
 
+	tlog("submitting 42 to %d", origLeaderId)
 	isLeader := h.SubmitToServer(origLeaderId, 42)
 	if !isLeader {
 		t.Errorf("want id=%d leader, but it's not", origLeaderId)
 	}
 
-	sleepMs(350)
+	sleepMs(150)
 	h.CheckCommitted(42)
+}
+
+func TestTestCommitMultipleCommands(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+
+	values := []int{42, 55, 81}
+	for _, v := range values {
+		tlog("submitting %d to %d", v, origLeaderId)
+		isLeader := h.SubmitToServer(origLeaderId, v)
+		if !isLeader {
+			t.Errorf("want id=%d leader, but it's not", origLeaderId)
+		}
+		sleepMs(100)
+	}
+
+	sleepMs(150)
+	i1, t1 := h.CheckCommitted(42)
+	i2, t2 := h.CheckCommitted(55)
+	if i1 >= i2 {
+		t.Errorf("want i1<i2, got i1=%d i2=%d", i1, i2)
+	}
+	if t1 != t2 {
+		t.Errorf("want t1=t2, got t1=%d t2=%d", t1, t2)
+	}
+
+	i3, t3 := h.CheckCommitted(81)
+	if i2 >= i3 {
+		t.Errorf("want i2<i3, got i2=%d i3=%d", i2, i3)
+	}
+	if t2 != t3 {
+		t.Errorf("want t2=t3, got t2=%d t3=%d", t2, t3)
+	}
 }

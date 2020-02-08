@@ -176,7 +176,8 @@ func (h *Harness) CheckNoLeader() {
 // the same term and index. It also verifies that all commands *before* cmd in
 // the commit sequence match. For this to work properly, all commands submitted
 // to Raft should be unique positive ints.
-func (h *Harness) CheckCommitted(cmd int) {
+// Returns the log term and index of the committed command.
+func (h *Harness) CheckCommitted(cmd int) (index int, term int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -228,13 +229,14 @@ func (h *Harness) CheckCommitted(cmd int) {
 					}
 				}
 			}
-			return
+			return index, term
 		}
 	}
 
 	// If there's no early return, we haven't found the command we were looking
 	// for.
 	h.t.Errorf("cmd=%d not found in commits", cmd)
+	return -1, -1
 }
 
 // SubmitToServer submits the command to serverId.
