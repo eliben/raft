@@ -173,12 +173,12 @@ func (h *Harness) CheckNoLeader() {
 }
 
 // CheckCommitted verifies that all connected servers have cmd committed with
-// the same term and index. It also verifies that all commands *before* cmd in
+// the same index. It also verifies that all commands *before* cmd in
 // the commit sequence match. For this to work properly, all commands submitted
 // to Raft should be unique positive ints.
-// Returns the number of servers that have this command committed, its log term
-// and its log index.
-func (h *Harness) CheckCommitted(cmd int) (nc int, index int, term int) {
+// Returns the number of servers that have this command committed, and its
+// log index.
+func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -214,9 +214,8 @@ func (h *Harness) CheckCommitted(cmd int) (nc int, index int, term int) {
 			}
 		}
 		if cmdAtC == cmd {
-			// Check consistency of Index and Term too.
+			// Check consistency of Index.
 			index := -1
-			term := -1
 			nc := 0
 			for i := 0; i < h.n; i++ {
 				if h.connected[i] {
@@ -225,23 +224,17 @@ func (h *Harness) CheckCommitted(cmd int) (nc int, index int, term int) {
 					} else {
 						index = h.commits[i][c].Index
 					}
-
-					if term >= 0 && h.commits[i][c].Term != term {
-						h.t.Errorf("got Term=%d, want %d at h.commits[%d][%d]", h.commits[i][c].Term, term, i, c)
-					} else {
-						term = h.commits[i][c].Term
-					}
 					nc++
 				}
 			}
-			return nc, index, term
+			return nc, index
 		}
 	}
 
 	// If there's no early return, we haven't found the command we were looking
 	// for.
 	h.t.Errorf("cmd=%d not found in commits", cmd)
-	return -1, -1, -1
+	return -1, -1
 }
 
 // SubmitToServer submits the command to serverId.

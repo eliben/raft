@@ -182,7 +182,7 @@ func TestCommitOneCommand(t *testing.T) {
 	}
 
 	sleepMs(150)
-	nc, _, _ := h.CheckCommitted(42)
+	nc, _ := h.CheckCommitted(42)
 	if nc != 3 {
 		t.Errorf("want nc=3, got %d", nc)
 	}
@@ -221,23 +221,57 @@ func TestCommitMultipleCommands(t *testing.T) {
 	}
 
 	sleepMs(150)
-	nc, i1, t1 := h.CheckCommitted(42)
-	_, i2, t2 := h.CheckCommitted(55)
+	nc, i1 := h.CheckCommitted(42)
+	_, i2 := h.CheckCommitted(55)
 	if nc != 3 {
 		t.Errorf("want nc=3, got %d", nc)
 	}
 	if i1 >= i2 {
 		t.Errorf("want i1<i2, got i1=%d i2=%d", i1, i2)
 	}
-	if t1 != t2 {
-		t.Errorf("want t1=t2, got t1=%d t2=%d", t1, t2)
-	}
 
-	_, i3, t3 := h.CheckCommitted(81)
+	_, i3 := h.CheckCommitted(81)
 	if i2 >= i3 {
 		t.Errorf("want i2<i3, got i2=%d i3=%d", i2, i3)
 	}
-	if t2 != t3 {
-		t.Errorf("want t2=t3, got t2=%d t3=%d", t2, t3)
+}
+
+func TestCommitWithDisconnectionAndRecover(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Submit a couple of values to a fully connected cluster.
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+
+	sleepMs(150)
+	nc, _ := h.CheckCommitted(6)
+	if nc != 3 {
+		t.Errorf("want nc=3, got %d", nc)
+	}
+
+	dPeerId := (origLeaderId + 1) % 3
+	h.DisconnectPeer(dPeerId)
+	sleepMs(150)
+
+	// Submit a new command; it will be committed but only to two servers.
+	h.SubmitToServer(origLeaderId, 7)
+	sleepMs(150)
+	nc, _ = h.CheckCommitted(7)
+	if nc != 2 {
+		t.Errorf("want nc=2, got %d", nc)
+	}
+
+	// Now reconnect dPeerId and wait a bit; it should find the new command too.
+	h.ReconnectPeer(dPeerId)
+	sleepMs(400)
+	h.CheckSingleLeader()
+
+	nc, _ = h.CheckCommitted(7)
+	if nc != 3 {
+		t.Errorf("want nc=3, got %d", nc)
 	}
 }
