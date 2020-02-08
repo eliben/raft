@@ -172,6 +172,76 @@ func (h *Harness) CheckNoLeader() {
 	}
 }
 
+// CheckCommitted verifies that all connected servers have cmd committed with
+// the same term and index. It also verifies that all commands *before* cmd in
+// the commit sequence match. For this to work properly, all commands submitted
+// to Raft should be unique positive ints.
+func (h *Harness) CheckCommitted(cmd int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Find the length of the commits slice for connected servers.
+	commitsLen := -1
+	for i := 0; i < h.n; i++ {
+		if h.connected[i] {
+			if commitsLen >= 0 {
+				// If this was set already, expect the new length to be the same.
+				if len(h.commits[i]) != commitsLen {
+					h.t.Fatalf("commits[%d] = %d, commitsLen = %d", i, h.commits[i], commitsLen)
+				}
+			} else {
+				commitsLen = len(h.commits[i])
+			}
+		}
+	}
+
+	// Check consistency of commits from the start and to the command we're asked
+	// about. This loop will return once a command=cmd is found.
+	for c := 0; c < commitsLen; c++ {
+		cmdAtC := -1
+		for i := 0; i < h.n; i++ {
+			if h.connected[i] {
+				cmdOfN := h.commits[i][c].Command.(int)
+				if cmdAtC >= 0 {
+					if cmdOfN != cmdAtC {
+						h.t.Errorf("got %d, want %d at h.commits[%d][%d]", cmdOfN, cmdAtC, i, c)
+					}
+				} else {
+					cmdAtC = cmdOfN
+				}
+			}
+		}
+		if cmdAtC == cmd {
+			// Check consistency of Index and Term too.
+			index := -1
+			term := -1
+			for i := 0; i < h.n; i++ {
+				if h.connected[i] {
+					if index >= 0 && h.commits[i][c].Index != index {
+						h.t.Errorf("got Index=%d, want %d at h.commits[%d][%d]", h.commits[i][c].Index, index, i, c)
+					} else {
+						index = h.commits[i][c].Index
+					}
+
+					if term >= 0 && h.commits[i][c].Term != term {
+						h.t.Errorf("got Term=%d, want %d at h.commits[%d][%d]", h.commits[i][c].Term, term, i, c)
+					}
+				}
+			}
+			return
+		}
+	}
+
+	// If there's no early return, we haven't found the command we were looking
+	// for.
+	h.t.Errorf("cmd=%d not found in commits", cmd)
+}
+
+// SubmitToServer submits the command to serverId.
+func (h *Harness) SubmitToServer(serverId int, cmd interface{}) bool {
+	return h.cluster[serverId].cm.Submit(cmd)
+}
+
 func tlog(format string, a ...interface{}) {
 	format = "[TEST] " + format
 	log.Printf(format, a...)

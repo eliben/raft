@@ -174,10 +174,12 @@ func TestCommitOneCommand(t *testing.T) {
 	defer h.Shutdown()
 
 	origLeaderId, _ := h.CheckSingleLeader()
-	isLeader := h.cluster[origLeaderId].cm.Submit(42)
+
+	isLeader := h.SubmitToServer(origLeaderId, 42)
 	if !isLeader {
 		t.Errorf("want id=%d leader, but it's not", origLeaderId)
 	}
 
 	sleepMs(350)
+	h.CheckCommitted(42)
 }
