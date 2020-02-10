@@ -177,6 +177,8 @@ func emitTestViz(dirname string, tl TestLog) {
 
 			if strings.Contains(entry.msg, "becomes Follower") {
 				serverState[idInt] = Follower
+			} else if strings.Contains(entry.msg, "listening") {
+				serverState[idInt] = Follower
 			} else if strings.Contains(entry.msg, "becomes Candidate") {
 				serverState[idInt] = Candidate
 			} else if strings.Contains(entry.msg, "becomes Leader") {
