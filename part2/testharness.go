@@ -241,6 +241,15 @@ func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
 	return -1, -1
 }
 
+// CheckCommittedN verifies that cmd was committed by exactly n connected
+// servers.
+func (h *Harness) CheckCommittedN(cmd int, n int) {
+	nc, _ := h.CheckCommitted(cmd)
+	if nc != n {
+		h.t.Errorf("CheckCommittedN got nc=%d, want %d", nc, n)
+	}
+}
+
 // CheckNotCommitted verifies that no command equal to cmd has been committed
 // by any of the active servers yet.
 func (h *Harness) CheckNotCommitted(cmd int) {
