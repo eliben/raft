@@ -20,6 +20,7 @@ type Harness struct {
 
 	// cluster is a list of all the raft servers participating in a cluster.
 	cluster []*Server
+	storage []Storage
 
 	// commitChans has a channel per server in cluster with the commi channel for
 	// that server.
@@ -43,6 +44,7 @@ type Harness struct {
 // to each other.
 func NewHarness(t *testing.T, n int) *Harness {
 	ns := make([]*Server, n)
+	storage := make([]Storage, n)
 	connected := make([]bool, n)
 	commitChans := make([]chan CommitEntry, n)
 	commits := make([][]CommitEntry, n)
@@ -58,7 +60,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		}
 
 		commitChans[i] = make(chan CommitEntry)
-		ns[i] = NewServer(i, peerIds, ready, commitChans[i])
+		ns[i] = NewServer(i, peerIds, storage[i], ready, commitChans[i])
 		ns[i].Serve()
 	}
 

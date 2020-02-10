@@ -3,6 +3,8 @@
 package raft
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"math/rand"
@@ -71,6 +73,9 @@ type ConsensusModule struct {
 	// to peers.
 	server *Server
 
+	// storage is used to persist state.
+	storage Storage
+
 	// commitChan is the channel where this CM is going to report committed log
 	// entries. It's passed in by the client during construction.
 	commitChan chan<- CommitEntry
@@ -100,11 +105,12 @@ type ConsensusModule struct {
 // server. The ready channel signals the CM that all peers are connected and
 // it's safe to start its state machine. commitChan is going to be used by the
 // CM to send log entries that have been committed by the Raft cluster.
-func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan interface{}, commitChan chan<- CommitEntry) *ConsensusModule {
+func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, ready <-chan interface{}, commitChan chan<- CommitEntry) *ConsensusModule {
 	cm := new(ConsensusModule)
 	cm.id = id
 	cm.peerIds = peerIds
 	cm.server = server
+	cm.storage = storage
 	cm.commitChan = commitChan
 	cm.newCommitReadyChan = make(chan struct{}, 16)
 	cm.state = Follower
@@ -113,6 +119,10 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 	cm.lastApplied = -1
 	cm.nextIndex = make(map[int]int)
 	cm.matchIndex = make(map[int]int)
+
+	if storage.HasData() {
+		cm.restoreFromStorage()
+	}
 
 	go func() {
 		// The CM is dormant until ready is signaled; then, it starts a countdown
@@ -160,6 +170,36 @@ func (cm *ConsensusModule) Stop() {
 	cm.state = Dead
 	cm.dlog("becomes Dead")
 	close(cm.newCommitReadyChan)
+}
+
+func (cm *ConsensusModule) restoreFromStorage() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if termData, found := cm.storage.Get("currentTerm"); found {
+		d := gob.NewDecoder(bytes.NewBuffer(termData))
+		if err := d.Decode(&cm.currentTerm); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Fatal("currentTerm not found in storage")
+	}
+	if votedData, found := cm.storage.Get("votedFor"); found {
+		d := gob.NewDecoder(bytes.NewBuffer(votedData))
+		if err := d.Decode(&cm.votedFor); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Fatal("votedFor not found in storage")
+	}
+	if logData, found := cm.storage.Get("log"); found {
+		d := gob.NewDecoder(bytes.NewBuffer(logData))
+		if err := d.Decode(&cm.log); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Fatal("log not found in storage")
+	}
 }
 
 // dlog logs a debugging message is DebugCM > 0.
