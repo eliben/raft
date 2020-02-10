@@ -153,6 +153,34 @@ func (h *Harness) CrashPeer(id int) {
 	h.DisconnectPeer(id)
 	h.alive[id] = false
 	h.cluster[id].Shutdown()
+
+	// Clear out the commits slice for the crashed server; Raft assumes the client
+	// has no persistent state. Once this server comes back online it will replay
+	// the whole log to us.
+	h.commits[id] = h.commits[id][:0]
+}
+
+// RestartPeer "restarts" a server by creating a new Server instance and giving
+// it the appropriate storage, reconnecting it to peers.
+func (h *Harness) RestartPeer(id int) {
+	if h.alive[id] {
+		log.Fatalf("id=%d is alive in RestartPeer", id)
+	}
+	tlog("Restart %d", id)
+
+	peerIds := make([]int, 0)
+	for p := 0; p < h.n; p++ {
+		if p != id {
+			peerIds = append(peerIds, p)
+		}
+	}
+
+	ready := make(chan interface{})
+	h.cluster[id] = NewServer(id, peerIds, h.storage[id], ready, h.commitChans[id])
+	h.cluster[id].Serve()
+	h.ReconnectPeer(id)
+	close(ready)
+	h.alive[id] = true
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.

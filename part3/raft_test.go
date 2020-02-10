@@ -368,7 +368,7 @@ func TestCommitsWithLeaderDisconnects(t *testing.T) {
 	h.CheckNotCommitted(7)
 }
 
-func TestCrashPeer(t *testing.T) {
+func TestCrashFollower(t *testing.T) {
 	// Basic test to verify that crashing a peer doesn't blow up.
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
@@ -384,4 +384,36 @@ func TestCrashPeer(t *testing.T) {
 	h.CrashPeer((origLeaderId + 1) % 3)
 	sleepMs(350)
 	h.CheckCommittedN(5, 2)
+}
+
+func TestCrashThenRestartFollower(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+	h.SubmitToServer(origLeaderId, 7)
+
+	vals := []int{5, 6, 7}
+
+	sleepMs(350)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
+
+	h.CrashPeer((origLeaderId + 1) % 3)
+	sleepMs(350)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 2)
+	}
+
+	// Restart the crashed follower and give it some time to come up-to-date.
+	h.RestartPeer((origLeaderId + 1) % 3)
+	sleepMs(550)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
 }
