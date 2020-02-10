@@ -178,6 +178,10 @@ func (h *Harness) CheckNoLeader() {
 // to Raft should be unique positive ints.
 // Returns the number of servers that have this command committed, and its
 // log index.
+// TODO: this check may be too strict. Consider tha a server can commit
+// something and crash before notifying the channel. It's a valid commit but
+// this checker will fail because it may not match other servers. This scenario
+// is described in the paper...
 func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -235,6 +239,24 @@ func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
 	// for.
 	h.t.Errorf("cmd=%d not found in commits", cmd)
 	return -1, -1
+}
+
+// CheckNotCommitted verifies that no command equal to cmd has been committed
+// by any of the active servers yet.
+func (h *Harness) CheckNotCommitted(cmd int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i := 0; i < h.n; i++ {
+		if h.connected[i] {
+			for c := 0; c < len(h.commits[i]); c++ {
+				gotCmd := h.commits[i][c].Command.(int)
+				if gotCmd == cmd {
+					h.t.Errorf("found %d at commits[%d][%d], expected none", cmd, i, c)
+				}
+			}
+		}
+	}
 }
 
 // SubmitToServer submits the command to serverId.

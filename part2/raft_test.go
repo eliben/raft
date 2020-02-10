@@ -275,3 +275,57 @@ func TestCommitWithDisconnectionAndRecover(t *testing.T) {
 		t.Errorf("want nc=3, got %d", nc)
 	}
 }
+
+func TestNoCommitWithNoQuorum(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Submit a couple of values to a fully connected cluster.
+	origLeaderId, origTerm := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+
+	sleepMs(150)
+	nc, _ := h.CheckCommitted(6)
+	if nc != 3 {
+		t.Errorf("want nc=3, got %d", nc)
+	}
+
+	// Disconnect both followers.
+	dPeer1 := (origLeaderId + 1) % 3
+	dPeer2 := (origLeaderId + 2) % 3
+	h.DisconnectPeer(dPeer1)
+	h.DisconnectPeer(dPeer2)
+	sleepMs(150)
+
+	h.SubmitToServer(origLeaderId, 8)
+	sleepMs(150)
+	h.CheckNotCommitted(8)
+
+	// Reconnect both other servers, we'll have quorum now.
+	h.ReconnectPeer(dPeer1)
+	h.ReconnectPeer(dPeer2)
+	sleepMs(600)
+
+	// 8 is still not committed because the term has changed.
+	h.CheckNotCommitted(8)
+
+	// But the leader is the same one as before, because its log is longer.
+	leaderAgainId, againTerm := h.CheckSingleLeader()
+	if leaderAgainId != origLeaderId {
+		t.Errorf("got leaderAgainId=%d, origLeaderId=%d; want them equal", leaderAgainId, origLeaderId)
+	}
+	if origTerm == againTerm {
+		t.Errorf("got origTerm==againTerm==%d; want them different", origTerm)
+	}
+
+	// But a new value will be committed...
+	h.SubmitToServer(origLeaderId, 9)
+	sleepMs(150)
+	nc, _ = h.CheckCommitted(9)
+	if nc != 3 {
+		t.Errorf("want nc=3, got %d", nc)
+	}
+}

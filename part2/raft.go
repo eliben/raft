@@ -302,7 +302,8 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 // number very often. This is to create collisions between different servers
 // and to force re-elections.
 func (cm *ConsensusModule) electionTimeout() time.Duration {
-	if rand.Intn(3) == 0 {
+	// TODO: flip this to 3 in some tests for harder constraints.
+	if rand.Intn(33) == 0 {
 		return time.Duration(150) * time.Millisecond
 	} else {
 		return time.Duration(150+rand.Intn(150)) * time.Millisecond
