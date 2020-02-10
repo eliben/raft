@@ -134,7 +134,7 @@ func (h *Harness) ReconnectPeer(id int) {
 // Returns the leader's id and term. It retries several times if no leader is
 // identified yet.
 func (h *Harness) CheckSingleLeader() (int, int) {
-	for r := 0; r < 5; r++ {
+	for r := 0; r < 8; r++ {
 		leaderId := -1
 		leaderTerm := -1
 		for i := 0; i < h.n; i++ {
