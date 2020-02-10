@@ -6,7 +6,7 @@ import "sync"
 
 // Storage is an interface implemented by stable storage providers.
 type Storage interface {
-	Set(key string, value []byte) error
+	Set(key string, value []byte)
 
 	Get(key string) ([]byte, bool)
 
@@ -34,11 +34,10 @@ func (ms *MapStorage) Get(key string) ([]byte, bool) {
 	return v, found
 }
 
-func (ms *MapStorage) Set(key string, value []byte) error {
+func (ms *MapStorage) Set(key string, value []byte) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.m[key] = value
-	return nil
 }
 
 func (ms *MapStorage) HasData() bool {

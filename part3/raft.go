@@ -120,8 +120,8 @@ func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, 
 	cm.nextIndex = make(map[int]int)
 	cm.matchIndex = make(map[int]int)
 
-	if storage.HasData() {
-		cm.restoreFromStorage()
+	if cm.storage.HasData() {
+		cm.restoreFromStorage(cm.storage)
 	}
 
 	go func() {
@@ -155,6 +155,7 @@ func (cm *ConsensusModule) Submit(command interface{}) bool {
 	cm.dlog("Submit received by %v: %v", cm.state, command)
 	if cm.state == Leader {
 		cm.log = append(cm.log, LogEntry{Command: command, Term: cm.currentTerm})
+		cm.persistToStorage()
 		cm.dlog("... log=%v", cm.log)
 		return true
 	}
@@ -172,10 +173,9 @@ func (cm *ConsensusModule) Stop() {
 	close(cm.newCommitReadyChan)
 }
 
-func (cm *ConsensusModule) restoreFromStorage() {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
+// restoreFromStorage restores the persistent stat of this CM from storage.
+// It should be called during constructor, before any concurrency concerns.
+func (cm *ConsensusModule) restoreFromStorage(storage Storage) {
 	if termData, found := cm.storage.Get("currentTerm"); found {
 		d := gob.NewDecoder(bytes.NewBuffer(termData))
 		if err := d.Decode(&cm.currentTerm); err != nil {
@@ -200,6 +200,28 @@ func (cm *ConsensusModule) restoreFromStorage() {
 	} else {
 		log.Fatal("log not found in storage")
 	}
+}
+
+// persistToStorage saves all of CM's persistent state in cm.storage.
+// Expects cm.mu to be locked.
+func (cm *ConsensusModule) persistToStorage() {
+	var termData bytes.Buffer
+	if err := gob.NewEncoder(&termData).Encode(cm.currentTerm); err != nil {
+		log.Fatal(err)
+	}
+	cm.storage.Set("currentTerm", termData.Bytes())
+
+	var votedData bytes.Buffer
+	if err := gob.NewEncoder(&votedData).Encode(cm.votedFor); err != nil {
+		log.Fatal(err)
+	}
+	cm.storage.Set("votedFor", votedData.Bytes())
+
+	var logData bytes.Buffer
+	if err := gob.NewEncoder(&logData).Encode(cm.log); err != nil {
+		log.Fatal(err)
+	}
+	cm.storage.Set("log", logData.Bytes())
 }
 
 // dlog logs a debugging message is DebugCM > 0.
@@ -249,6 +271,7 @@ func (cm *ConsensusModule) RequestVote(args RequestVoteArgs, reply *RequestVoteR
 		reply.VoteGranted = false
 	}
 	reply.Term = cm.currentTerm
+	cm.persistToStorage()
 	cm.dlog("... RequestVote reply: %+v", reply)
 	return nil
 }
@@ -333,6 +356,7 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 	}
 
 	reply.Term = cm.currentTerm
+	cm.persistToStorage()
 	cm.dlog("AppendEntries reply: %+v", *reply)
 	return nil
 }

@@ -77,6 +77,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 
 	h := &Harness{
 		cluster:     ns,
+		storage:     storage,
 		commitChans: commitChans,
 		commits:     commits,
 		connected:   connected,
