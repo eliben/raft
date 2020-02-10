@@ -20,7 +20,7 @@ type Harness struct {
 
 	// cluster is a list of all the raft servers participating in a cluster.
 	cluster []*Server
-	storage []Storage
+	storage []*MapStorage
 
 	// commitChans has a channel per server in cluster with the commi channel for
 	// that server.
@@ -36,6 +36,11 @@ type Harness struct {
 	// will pass to or from it).
 	connected []bool
 
+	// alive has a bool per server in cluster, specifying whether this server is
+	// currently alive (false means it has crashed and wasn't restarted yet).
+	// connected implies alive.
+	alive []bool
+
 	n int
 	t *testing.T
 }
@@ -44,11 +49,12 @@ type Harness struct {
 // to each other.
 func NewHarness(t *testing.T, n int) *Harness {
 	ns := make([]*Server, n)
-	storage := make([]Storage, n)
 	connected := make([]bool, n)
+	alive := make([]bool, n)
 	commitChans := make([]chan CommitEntry, n)
 	commits := make([][]CommitEntry, n)
 	ready := make(chan interface{})
+	storage := make([]*MapStorage, n)
 
 	// Create all Servers in this cluster, assign ids and peer ids.
 	for i := 0; i < n; i++ {
@@ -59,9 +65,11 @@ func NewHarness(t *testing.T, n int) *Harness {
 			}
 		}
 
+		storage[i] = NewMapStorage()
 		commitChans[i] = make(chan CommitEntry)
 		ns[i] = NewServer(i, peerIds, storage[i], ready, commitChans[i])
 		ns[i].Serve()
+		alive[i] = true
 	}
 
 	// Connect all peers to each other.
@@ -81,6 +89,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		commitChans: commitChans,
 		commits:     commits,
 		connected:   connected,
+		alive:       alive,
 		n:           n,
 		t:           t,
 	}
@@ -98,7 +107,10 @@ func (h *Harness) Shutdown() {
 		h.connected[i] = false
 	}
 	for i := 0; i < h.n; i++ {
-		h.cluster[i].Shutdown()
+		if h.alive[i] {
+			h.alive[i] = false
+			h.cluster[i].Shutdown()
+		}
 	}
 	for i := 0; i < h.n; i++ {
 		close(h.commitChans[i])
@@ -131,6 +143,16 @@ func (h *Harness) ReconnectPeer(id int) {
 		}
 	}
 	h.connected[id] = true
+}
+
+// CrashPeer "crashes" a server by disconnecting it from all peers and then
+// asking it to shut down. We're not going to use the same server instance
+// again, but its storage is retained.
+func (h *Harness) CrashPeer(id int) {
+	tlog("Crash %d", id)
+	h.DisconnectPeer(id)
+	h.alive[id] = false
+	h.cluster[id].Shutdown()
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.

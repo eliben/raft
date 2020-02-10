@@ -367,3 +367,21 @@ func TestCommitsWithLeaderDisconnects(t *testing.T) {
 	// But 7 is not committed...
 	h.CheckNotCommitted(7)
 }
+
+func TestCrashPeer(t *testing.T) {
+	// Basic test to verify that crashing a peer doesn't blow up.
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+
+	sleepMs(350)
+	h.CheckCommittedN(5, 3)
+
+	h.CrashPeer((origLeaderId + 1) % 3)
+	sleepMs(350)
+	h.CheckCommittedN(5, 2)
+}
