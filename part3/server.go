@@ -134,9 +134,12 @@ func (s *Server) ConnectToPeer(peerId int, addr net.Addr) error {
 func (s *Server) DisconnectPeer(peerId int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	err := s.peerClients[peerId].Close()
-	s.peerClients[peerId] = nil
-	return err
+	if s.peerClients[peerId] != nil {
+		err := s.peerClients[peerId].Close()
+		s.peerClients[peerId] = nil
+		return err
+	}
+	return nil
 }
 
 func (s *Server) Call(id int, serviceMethod string, args interface{}, reply interface{}) error {

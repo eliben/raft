@@ -133,7 +133,7 @@ func (h *Harness) DisconnectPeer(id int) {
 func (h *Harness) ReconnectPeer(id int) {
 	tlog("Reconnect %d", id)
 	for j := 0; j < h.n; j++ {
-		if j != id {
+		if j != id && h.alive[j] {
 			if err := h.cluster[id].ConnectToPeer(j, h.cluster[j].GetListenAddr()); err != nil {
 				h.t.Fatal(err)
 			}
@@ -181,6 +181,7 @@ func (h *Harness) RestartPeer(id int) {
 	h.ReconnectPeer(id)
 	close(ready)
 	h.alive[id] = true
+	sleepMs(20)
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.

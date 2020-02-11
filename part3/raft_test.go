@@ -417,3 +417,74 @@ func TestCrashThenRestartFollower(t *testing.T) {
 		h.CheckCommittedN(v, 3)
 	}
 }
+
+func TestCrashThenRestartLeader(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+	h.SubmitToServer(origLeaderId, 7)
+
+	vals := []int{5, 6, 7}
+
+	sleepMs(350)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
+
+	h.CrashPeer(origLeaderId)
+	sleepMs(350)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 2)
+	}
+
+	h.RestartPeer(origLeaderId)
+	sleepMs(550)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
+}
+
+func TestCrashThenRestartAll(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+	h.SubmitToServer(origLeaderId, 7)
+
+	vals := []int{5, 6, 7}
+
+	sleepMs(350)
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
+
+	for i := 0; i < 3; i++ {
+		h.CrashPeer((origLeaderId + i) % 3)
+	}
+
+	sleepMs(350)
+
+	for i := 0; i < 3; i++ {
+		h.RestartPeer((origLeaderId + i) % 3)
+	}
+
+	sleepMs(150)
+	newLeaderId, _ := h.CheckSingleLeader()
+
+	h.SubmitToServer(newLeaderId, 8)
+	sleepMs(150)
+
+	vals = []int{5, 6, 7, 8}
+	for _, v := range vals {
+		h.CheckCommittedN(v, 3)
+	}
+}
