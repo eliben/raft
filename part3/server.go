@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"net/rpc"
+	"os"
 	"sync"
 	"time"
 )
@@ -158,18 +159,42 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 
 // RPCProxy is a trivial pass-thru proxy type for ConsensusModule's RPC methods.
 // It's useful for:
-// - Emulating a small delay in RPC transmission.
+// - Simulating a small delay in RPC transmission.
 // - Avoiding running into https://github.com/golang/go/issues/19957
+// - Simulating possible unreliable connections by delaying some messages
+//   significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
 type RPCProxy struct {
 	cm *ConsensusModule
 }
 
 func (rpp *RPCProxy) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
-	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+	if len(os.Getenv("RAFT_UNRELIABLE_RPC")) > 0 {
+		dice := rand.Intn(10)
+		if dice == 9 {
+			rpp.cm.dlog("drop RequestVote")
+			return fmt.Errorf("RPC failed")
+		} else if dice == 8 {
+			rpp.cm.dlog("delay RequestVote")
+			time.Sleep(75 * time.Millisecond)
+		}
+	} else {
+		time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+	}
 	return rpp.cm.RequestVote(args, reply)
 }
 
 func (rpp *RPCProxy) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) error {
-	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+	if len(os.Getenv("RAFT_UNRELIABLE_RPC")) > 0 {
+		dice := rand.Intn(10)
+		if dice == 9 {
+			rpp.cm.dlog("drop AppendEntries")
+			return fmt.Errorf("RPC failed")
+		} else if dice == 8 {
+			rpp.cm.dlog("delay AppendEntries")
+			time.Sleep(75 * time.Millisecond)
+		}
+	} else {
+		time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+	}
 	return rpp.cm.AppendEntries(args, reply)
 }

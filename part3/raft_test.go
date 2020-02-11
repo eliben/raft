@@ -181,7 +181,7 @@ func TestCommitOneCommand(t *testing.T) {
 		t.Errorf("want id=%d leader, but it's not", origLeaderId)
 	}
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(42, 3)
 }
 
@@ -217,7 +217,7 @@ func TestCommitMultipleCommands(t *testing.T) {
 		sleepMs(100)
 	}
 
-	sleepMs(150)
+	sleepMs(250)
 	nc, i1 := h.CheckCommitted(42)
 	_, i2 := h.CheckCommitted(55)
 	if nc != 3 {
@@ -244,16 +244,16 @@ func TestCommitWithDisconnectionAndRecover(t *testing.T) {
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(6, 3)
 
 	dPeerId := (origLeaderId + 1) % 3
 	h.DisconnectPeer(dPeerId)
-	sleepMs(150)
+	sleepMs(250)
 
 	// Submit a new command; it will be committed but only to two servers.
 	h.SubmitToServer(origLeaderId, 7)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(7, 2)
 
 	// Now reconnect dPeerId and wait a bit; it should find the new command too.
@@ -275,7 +275,7 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(6, 3)
 
 	// Disconnect both followers.
@@ -283,10 +283,10 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	dPeer2 := (origLeaderId + 2) % 3
 	h.DisconnectPeer(dPeer1)
 	h.DisconnectPeer(dPeer2)
-	sleepMs(150)
+	sleepMs(250)
 
 	h.SubmitToServer(origLeaderId, 8)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckNotCommitted(8)
 
 	// Reconnect both other servers, we'll have quorum now.
@@ -328,7 +328,7 @@ func TestCommitsWithLeaderDisconnects(t *testing.T) {
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(6, 5)
 
 	// Leader disconnected...
@@ -338,14 +338,14 @@ func TestCommitsWithLeaderDisconnects(t *testing.T) {
 	// Submit 7 to original leader, even though it's disconnected.
 	h.SubmitToServer(origLeaderId, 7)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckNotCommitted(7)
 
 	newLeaderId, _ := h.CheckSingleLeader()
 
 	// Submit 8 to new leader.
 	h.SubmitToServer(newLeaderId, 8)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(8, 4)
 
 	// Reconnect old leader and let it settle. The old leader shouldn't be the one
@@ -360,7 +360,7 @@ func TestCommitsWithLeaderDisconnects(t *testing.T) {
 
 	// Submit 9 and check it's fully committed.
 	h.SubmitToServer(newLeaderId, 9)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(9, 5)
 	h.CheckCommittedN(8, 5)
 
@@ -481,13 +481,10 @@ func TestCrashThenRestartAll(t *testing.T) {
 	newLeaderId, _ := h.CheckSingleLeader()
 
 	h.SubmitToServer(newLeaderId, 8)
-	sleepMs(150)
+	sleepMs(250)
 
 	vals = []int{5, 6, 7, 8}
 	for _, v := range vals {
 		h.CheckCommittedN(v, 3)
 	}
 }
-
-// TODO: need tests with unreliable network.
-// This can be accomplished by using the RPCProxy in each server.
