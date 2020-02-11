@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -362,12 +363,11 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 }
 
 // electionTimeout generates a pseudo-random election timeout duration.
-// For stress-testing our implementation, it purposefully generates a hard-coded
-// number very often. This is to create collisions between different servers
-// and to force re-elections.
 func (cm *ConsensusModule) electionTimeout() time.Duration {
-	// TODO: flip this to 3 in some tests for harder constraints.
-	if rand.Intn(33) == 0 {
+	// If RAFT_FORCE_MORE_REELECTION is set, stress-test by deliberately
+	// generating a hard-coded number very often. This will create collisions
+	// between different servers and force more re-elections.
+	if len(os.Getenv("RAFT_FORCE_MORE_REELECTION")) > 0 && rand.Intn(3) == 0 {
 		return time.Duration(150) * time.Millisecond
 	} else {
 		return time.Duration(150+rand.Intn(150)) * time.Millisecond
