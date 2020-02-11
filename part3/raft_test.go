@@ -488,3 +488,6 @@ func TestCrashThenRestartAll(t *testing.T) {
 		h.CheckCommittedN(v, 3)
 	}
 }
+
+// TODO: need tests with unreliable network.
+// This can be accomplished by using the RPCProxy in each server.

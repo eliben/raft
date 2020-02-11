@@ -275,9 +275,16 @@ func main() {
 		tnames[tl.name] += 1
 	}
 
+	statusSummary := "PASS"
+
 	for _, tl := range testlogs {
 		fmt.Println(tl.status, tl.name, tl.ids, "; entries:", len(tl.entries))
+		if tl.status != "PASS" {
+			statusSummary = tl.status
+		}
 		emitTestViz("/tmp", tl)
 		fmt.Println("")
 	}
+
+	fmt.Println(statusSummary)
 }
