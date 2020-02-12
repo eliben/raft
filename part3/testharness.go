@@ -3,6 +3,7 @@
 package raft
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -12,7 +13,9 @@ import (
 
 func init() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	rand.Seed(time.Now().UnixNano())
+	seed := time.Now().UnixNano()
+	fmt.Println("seed", seed)
+	rand.Seed(seed)
 }
 
 type Harness struct {

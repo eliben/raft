@@ -233,6 +233,9 @@ func parseTestLogs(rd io.Reader) []TestLog {
 			testlogs = append(testlogs, TestLog{ids: make(map[string]bool)})
 			testlogs[len(testlogs)-1].name = strings.TrimSpace(line[7:])
 		} else {
+			if len(testlogs) == 0 {
+				continue
+			}
 			curlog := &testlogs[len(testlogs)-1]
 
 			statusMatch := statusRE.FindStringSubmatch(line)
