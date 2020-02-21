@@ -43,3 +43,22 @@ You should see something like this:
 Scroll and read the logs from the servers, noticing state changes (highlighted
 with colors). Feel free to add your own `cm.dlog(...)` calls to the code to
 experiment and print out more details.
+
+## Changing and testing the code
+
+Each `partN` directory is completely independent of the others, and is its own
+Go module. The Raft code itself has no external dependencies; the only `require`
+in its `go.mod` is for a package that enables goroutine leak testing - it's only
+used in tests.
+
+To work on `part`, for example:
+
+```
+$ cd part2
+... make code changes
+$ go test -race ./...
+```
+
+Depending on the part and your machine, the tests can take up to a minute to
+run. Feel free to enable verbose logging with ``-v``, and/or used the provided
+``dotest.sh`` script to run specific tests with log visualization.
