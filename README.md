@@ -51,7 +51,7 @@ Go module. The Raft code itself has no external dependencies; the only `require`
 in its `go.mod` is for a package that enables goroutine leak testing - it's only
 used in tests.
 
-To work on `part`, for example:
+To work on `part2`, for example:
 
 ```
 $ cd part2
