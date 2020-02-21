@@ -8,9 +8,9 @@ algorithm in Go. It's accompanied by a series of blog posts:
 * Part 2 - TBD
 * Part 3 - TBD
 
-Each of the ``partN`` directories in this repository is the complete source code
+Each of the `partN` directories in this repository is the complete source code
 for Part N of the blog post series (except Part 0, which is introductory and has
-no code). There is a lot of duplicated code between the different ``partN``
+no code). There is a lot of duplicated code between the different `partN`
 directories - this is a conscious design decision. Rather than abstracting and
 reusing parts of the implementation, I opted for keeping the code as simple
 as possible. Each directory is completely self contained and can be read and
@@ -23,7 +23,7 @@ You can read the code, but I'd also encourage you to run tests and observe the
 logs they print out. The repository contains a useful tool for visualizing
 output. Here's a complete usage example:
 
-```bash
+```
 $ cd part1
 $ go test -v -race -run TestElectionFollowerComesBack |& tee /tmp/raftlog
 ... logging output
@@ -35,11 +35,11 @@ PASS TestElectionFollowerComesBack map[0:true 1:true 2:true TEST:true] ; entries
 PASS
 ```
 
-Now open ``file:///tmp/TestElectionFollowerComesBack.html``` in your browser.
+Now open `file:///tmp/TestElectionFollowerComesBack.html` in your browser.
 You should see something like this:
 
 image here
 
 Scroll and read the logs from the servers, noticing state changes (highlighted
-with colors). Feel free to add your own ``cm.dlog(...)`` calls to the code to
+with colors). Feel free to add your own `cm.dlog(...)` calls to the code to
 experiment and print out more details.
