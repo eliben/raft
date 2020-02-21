@@ -13,7 +13,9 @@ for Part N of the blog post series (except Part 0, which is introductory and has
 no code). There is a lot of duplicated code between the different ``partN``
 directories - this is a conscious design decision. Rather than abstracting and
 reusing parts of the implementation, I opted for keeping the code as simple
-as possible.
+as possible. Each directory is completely self contained and can be read and
+undestood in isolation. Using a graphical diff tool to see the deltas between
+the parts can be instructional.
 
 ## How to use this repository
 
