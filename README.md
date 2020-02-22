@@ -1,4 +1,4 @@
-# Raft
+# :rowboat: Raft
 
 This is an instructional implementation of the Raft distributed consensus
 algorithm in Go. It's accompanied by a series of blog posts:
