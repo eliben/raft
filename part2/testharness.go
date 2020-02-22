@@ -1,3 +1,5 @@
+// Test harness for writing tests for Raft.
+//
 // Eli Bendersky [https://eli.thegreenplace.net]
 // This code is in the public domain.
 package raft

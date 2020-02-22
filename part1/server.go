@@ -1,3 +1,6 @@
+// Server container for a Raft Consensus Module. Exposes Raft to the network
+// and enables RPCs between Raft peers.
+//
 // Eli Bendersky [https://eli.thegreenplace.net]
 // This code is in the public domain.
 package raft
