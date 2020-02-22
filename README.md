@@ -38,7 +38,7 @@ PASS
 Now open `file:///tmp/TestElectionFollowerComesBack.html` in your browser.
 You should see something like this:
 
-![Image of log browser](https://github.com/eliben/raft/blob/master/images/raftlog-screenshot.png)
+![Image of log browser](https://github.com/eliben/raft/blob/master/raftlog-screenshot.png)
 
 Scroll and read the logs from the servers, noticing state changes (highlighted
 with colors). Feel free to add your own `cm.dlog(...)` calls to the code to
