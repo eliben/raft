@@ -3,10 +3,10 @@
 This is an instructional implementation of the Raft distributed consensus
 algorithm in Go. It's accompanied by a series of blog posts:
 
-* TODO: part 0
-* Part 1 - TBD
-* Part 2 - TBD
-* Part 3 - TBD
+* Part 0: Introduction
+* Part 1: Elections (coming soon)
+* Part 2: Commands and log replication (coming soon)
+* Part 3: Persistence and optimizations (coming soon)
 
 Each of the `partN` directories in this repository is the complete source code
 for Part N of the blog post series (except Part 0, which is introductory and has
