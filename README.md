@@ -62,3 +62,9 @@ $ go test -race ./...
 Depending on the part and your machine, the tests can take up to a minute to
 run. Feel free to enable verbose logging with ``-v``, and/or used the provided
 ``dotest.sh`` script to run specific tests with log visualization.
+
+## Contributing
+
+I'm interested in hearing your opinion or suggestions for the code in this
+repository. Feel free to open an issue if something is unclear, or if you think
+you found a bug. Code contributions through PRs are welcome as well.
