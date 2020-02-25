@@ -1,10 +1,10 @@
-# Raft
+# :rowboat: Raft
 
 This is an instructional implementation of the Raft distributed consensus
 algorithm in Go. It's accompanied by a series of blog posts:
 
-* Part 0: Introduction
-* Part 1: Elections (coming soon)
+* [Part 0: Introduction](https://eli.thegreenplace.net/2020/implementing-raft-part-0-introduction/)
+* [Part 1: Elections](https://eli.thegreenplace.net/2020/implementing-raft-part-1-elections/)
 * Part 2: Commands and log replication (coming soon)
 * Part 3: Persistence and optimizations (coming soon)
 
