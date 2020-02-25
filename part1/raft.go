@@ -369,10 +369,10 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 			Term:     savedCurrentTerm,
 			LeaderId: cm.id,
 		}
-		go func(peer int) {
-			cm.dlog("sending AppendEntries to %v: ni=%d, args=%+v", peer, 0, args)
+		go func(peerId int) {
+			cm.dlog("sending AppendEntries to %v: ni=%d, args=%+v", peerId, 0, args)
 			var reply AppendEntriesReply
-			if err := cm.server.Call(peer, "ConsensusModule.AppendEntries", args, &reply); err == nil {
+			if err := cm.server.Call(peerId, "ConsensusModule.AppendEntries", args, &reply); err == nil {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()
 				if reply.Term > savedCurrentTerm {
