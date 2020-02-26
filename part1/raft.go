@@ -279,15 +279,15 @@ func (cm *ConsensusModule) startElection() {
 
 	// Send RequestVote RPCs to all other servers concurrently.
 	for _, peerId := range cm.peerIds {
-		go func(peer int) {
+		go func(peerId int) {
 			args := RequestVoteArgs{
 				Term:        savedCurrentTerm,
 				CandidateId: cm.id,
 			}
 			var reply RequestVoteReply
 
-			cm.dlog("sending RequestVote to %d: %+v", peer, args)
-			if err := cm.server.Call(peer, "ConsensusModule.RequestVote", args, &reply); err == nil {
+			cm.dlog("sending RequestVote to %d: %+v", peerId, args)
+			if err := cm.server.Call(peerId, "ConsensusModule.RequestVote", args, &reply); err == nil {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()
 				cm.dlog("received RequestVoteReply %+v", reply)
