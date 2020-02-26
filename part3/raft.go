@@ -88,6 +88,10 @@ type ConsensusModule struct {
 	// on commitChan.
 	newCommitReadyChan chan struct{}
 
+	// triggerAEChan is an internal notification channel used to trigger
+	// sending new AEs to followers when interesting changes occurred.
+	triggerAEChan chan struct{}
+
 	// Persistent Raft state on all servers
 	currentTerm int
 	votedFor    int
@@ -116,6 +120,7 @@ func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, 
 	cm.storage = storage
 	cm.commitChan = commitChan
 	cm.newCommitReadyChan = make(chan struct{}, 16)
+	cm.triggerAEChan = make(chan struct{})
 	cm.state = Follower
 	cm.votedFor = -1
 	cm.commitIndex = -1
@@ -153,15 +158,17 @@ func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 // a different CM to submit this command to.
 func (cm *ConsensusModule) Submit(command interface{}) bool {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	cm.dlog("Submit received by %v: %v", cm.state, command)
 	if cm.state == Leader {
 		cm.log = append(cm.log, LogEntry{Command: command, Term: cm.currentTerm})
 		cm.persistToStorage()
 		cm.dlog("... log=%v", cm.log)
+		cm.mu.Unlock()
+		cm.triggerAEChan <- struct{}{}
 		return true
 	}
+
+	cm.mu.Unlock()
 	return false
 }
 
@@ -502,29 +509,60 @@ func (cm *ConsensusModule) startLeader() {
 	cm.state = Leader
 	cm.dlog("becomes Leader; term=%d, log=%v", cm.currentTerm, cm.log)
 
-	go func() {
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
+	// This goroutine runs in the background and sends AEs to peers:
+	// * Whenever something is sent on triggerAEChan
+	// * ... Or every 50 ms, if no events occur on triggerAEChan
+	go func(heartbeatTimeout time.Duration) {
+		// Immediately send AEs to peers.
+		cm.leaderSendAEs()
 
-		// Send periodic heartbeats, as long as still leader.
+		t := time.NewTimer(heartbeatTimeout)
+		defer t.Stop()
 		for {
-			cm.leaderSendHeartbeats()
-			<-ticker.C
+			doSend := false
+			select {
+			case <-t.C:
+				//cm.dlog("t.C elapsed")
+				doSend = true
 
-			cm.mu.Lock()
-			if cm.state != Leader {
-				cm.mu.Unlock()
-				return
+				// Reset timer to fire again after heartbeatTimeout.
+				t.Stop()
+				t.Reset(heartbeatTimeout)
+			case _, ok := <-cm.triggerAEChan:
+				//cm.dlog("cm.triggerAEChan received")
+				if ok {
+					//cm.dlog("setting doSend")
+					doSend = true
+				} else {
+					return
+				}
+
+				// Reset timer for heartbeatTimeout.
+				if !t.Stop() {
+					<-t.C
+				}
+				t.Reset(heartbeatTimeout)
 			}
-			cm.mu.Unlock()
+
+			if doSend {
+				//cm.dlog("doSend")
+				cm.mu.Lock()
+				if cm.state != Leader {
+					cm.mu.Unlock()
+					return
+				}
+				cm.mu.Unlock()
+				cm.leaderSendAEs()
+			}
 		}
-	}()
+	}(50 * time.Millisecond)
 }
 
-// leaderSendHeartbeats sends a round of heartbeats to all peers, collects their
+// leaderSendAEs sends a round of AEs to all peers, collects their
 // replies and adjusts cm's state.
-func (cm *ConsensusModule) leaderSendHeartbeats() {
+func (cm *ConsensusModule) leaderSendAEs() {
 	cm.mu.Lock()
+	//cm.dlog("leaderSendAEs")
 	savedCurrentTerm := cm.currentTerm
 	cm.mu.Unlock()
 
