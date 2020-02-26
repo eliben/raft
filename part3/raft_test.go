@@ -412,7 +412,7 @@ func TestCrashThenRestartFollower(t *testing.T) {
 
 	// Restart the crashed follower and give it some time to come up-to-date.
 	h.RestartPeer((origLeaderId + 1) % 3)
-	sleepMs(550)
+	sleepMs(650)
 	for _, v := range vals {
 		h.CheckCommittedN(v, 3)
 	}
