@@ -524,6 +524,7 @@ func (cm *ConsensusModule) startLeader() {
 			doSend := false
 			select {
 			case <-t.C:
+				// TODO: remove these dlogs entirely
 				//cm.dlog("t.C elapsed")
 				doSend = true
 
@@ -564,6 +565,7 @@ func (cm *ConsensusModule) startLeader() {
 // replies and adjusts cm's state.
 func (cm *ConsensusModule) leaderSendAEs() {
 	cm.mu.Lock()
+	// TODO: remove these dlogs entirely
 	//cm.dlog("leaderSendAEs")
 	savedCurrentTerm := cm.currentTerm
 	cm.mu.Unlock()
