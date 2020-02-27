@@ -302,6 +302,11 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+
+	// Faster conflict resolution optimization (described near the end of section
+	// 5.3 in the paper.)
+	ConflictIndex int
+	ConflictTerm  int
 }
 
 func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) error {
@@ -363,6 +368,26 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 				cm.commitIndex = intMin(args.LeaderCommit, len(cm.log)-1)
 				cm.dlog("... setting commitIndex=%d", cm.commitIndex)
 				cm.newCommitReadyChan <- struct{}{}
+			}
+		} else {
+			// No match for PrevLogIndex/PrevLogTerm. Populate
+			// ConflictIndex/ConflictTerm to help the leader bring us up to date
+			// quickly.
+			if args.PrevLogIndex >= len(cm.log) {
+				reply.ConflictIndex = len(cm.log)
+				reply.ConflictTerm = -1
+			} else {
+				// PrevLogIndex points within our log, but PrevLogTerm doesn't match
+				// cm.log[PrevLogIndex].
+				reply.ConflictTerm = cm.log[args.PrevLogIndex].Term
+
+				var i int
+				for i = args.PrevLogIndex - 1; i >= 0; i-- {
+					if cm.log[i].Term != reply.ConflictTerm {
+						break
+					}
+				}
+				reply.ConflictIndex = i + 1
 			}
 		}
 	}
@@ -623,7 +648,22 @@ func (cm *ConsensusModule) leaderSendAEs() {
 							cm.triggerAEChan <- struct{}{}
 						}
 					} else {
-						cm.nextIndex[peerId] = ni - 1
+						if reply.ConflictTerm >= 0 {
+							lastIndexOfTerm := -1
+							for i := len(cm.log) - 1; i >= 0; i-- {
+								if cm.log[i].Term == reply.ConflictTerm {
+									lastIndexOfTerm = i
+									break
+								}
+							}
+							if lastIndexOfTerm >= 0 {
+								cm.nextIndex[peerId] = lastIndexOfTerm + 1
+							} else {
+								cm.nextIndex[peerId] = reply.ConflictIndex
+							}
+						} else {
+							cm.nextIndex[peerId] = reply.ConflictIndex
+						}
 						cm.dlog("AppendEntries reply from %d !success: nextIndex := %d", peerId, ni-1)
 					}
 				}

@@ -324,7 +324,6 @@ func TestDisconnectLeaderBriefly(t *testing.T) {
 	origLeaderId, _ := h.CheckSingleLeader()
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
-
 	sleepMs(250)
 	h.CheckCommittedN(6, 3)
 
