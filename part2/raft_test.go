@@ -275,7 +275,7 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(6, 3)
 
 	// Disconnect both followers.
@@ -283,10 +283,10 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	dPeer2 := (origLeaderId + 2) % 3
 	h.DisconnectPeer(dPeer1)
 	h.DisconnectPeer(dPeer2)
-	sleepMs(150)
+	sleepMs(250)
 
 	h.SubmitToServer(origLeaderId, 8)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckNotCommitted(8)
 
 	// Reconnect both other servers, we'll have quorum now.
@@ -297,19 +297,18 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	// 8 is still not committed because the term has changed.
 	h.CheckNotCommitted(8)
 
-	// But the leader is the same one as before, because its log is longer.
-	leaderAgainId, againTerm := h.CheckSingleLeader()
-	if leaderAgainId != origLeaderId {
-		t.Errorf("got leaderAgainId=%d, origLeaderId=%d; want them equal", leaderAgainId, origLeaderId)
-	}
+	// A new leader will be elected. It could be a different leader, even though
+	// the original's log is longer, because the two reconnected peers can elect
+	// each other.
+	newLeaderId, againTerm := h.CheckSingleLeader()
 	if origTerm == againTerm {
 		t.Errorf("got origTerm==againTerm==%d; want them different", origTerm)
 	}
 
-	// But new values will be committed...
-	h.SubmitToServer(origLeaderId, 9)
-	h.SubmitToServer(origLeaderId, 10)
-	h.SubmitToServer(origLeaderId, 11)
+	// But new values will be committed for sure...
+	h.SubmitToServer(newLeaderId, 9)
+	h.SubmitToServer(newLeaderId, 10)
+	h.SubmitToServer(newLeaderId, 11)
 	sleepMs(350)
 
 	for _, v := range []int{9, 10, 11} {
