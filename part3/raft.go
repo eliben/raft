@@ -120,7 +120,7 @@ func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, 
 	cm.storage = storage
 	cm.commitChan = commitChan
 	cm.newCommitReadyChan = make(chan struct{}, 16)
-	cm.triggerAEChan = make(chan struct{})
+	cm.triggerAEChan = make(chan struct{}, 1)
 	cm.state = Follower
 	cm.votedFor = -1
 	cm.commitIndex = -1
