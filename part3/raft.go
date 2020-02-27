@@ -524,17 +524,13 @@ func (cm *ConsensusModule) startLeader() {
 			doSend := false
 			select {
 			case <-t.C:
-				// TODO: remove these dlogs entirely
-				//cm.dlog("t.C elapsed")
 				doSend = true
 
 				// Reset timer to fire again after heartbeatTimeout.
 				t.Stop()
 				t.Reset(heartbeatTimeout)
 			case _, ok := <-cm.triggerAEChan:
-				//cm.dlog("cm.triggerAEChan received")
 				if ok {
-					//cm.dlog("setting doSend")
 					doSend = true
 				} else {
 					return
@@ -548,7 +544,6 @@ func (cm *ConsensusModule) startLeader() {
 			}
 
 			if doSend {
-				//cm.dlog("doSend")
 				cm.mu.Lock()
 				if cm.state != Leader {
 					cm.mu.Unlock()
@@ -565,8 +560,6 @@ func (cm *ConsensusModule) startLeader() {
 // replies and adjusts cm's state.
 func (cm *ConsensusModule) leaderSendAEs() {
 	cm.mu.Lock()
-	// TODO: remove these dlogs entirely
-	//cm.dlog("leaderSendAEs")
 	savedCurrentTerm := cm.currentTerm
 	cm.mu.Unlock()
 
