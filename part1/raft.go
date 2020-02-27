@@ -91,7 +91,9 @@ func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan inte
 		// The CM is quiescent until ready is signaled; then, it starts a countdown
 		// for leader election.
 		<-ready
+		cm.mu.Lock()
 		cm.electionResetEvent = time.Now()
+		cm.mu.Unlock()
 		cm.runElectionTimer()
 	}()
 
