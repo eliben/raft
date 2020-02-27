@@ -297,24 +297,46 @@ func TestNoCommitWithNoQuorum(t *testing.T) {
 	// 8 is still not committed because the term has changed.
 	h.CheckNotCommitted(8)
 
-	// But the leader is the same one as before, because its log is longer.
-	leaderAgainId, againTerm := h.CheckSingleLeader()
-	if leaderAgainId != origLeaderId {
-		t.Errorf("got leaderAgainId=%d, origLeaderId=%d; want them equal", leaderAgainId, origLeaderId)
-	}
+	// A new leader will be elected. It could be a different leader, even though
+	// the original's log is longer, because the two reconnected peers can elect
+	// each other.
+	newLeaderId, againTerm := h.CheckSingleLeader()
 	if origTerm == againTerm {
 		t.Errorf("got origTerm==againTerm==%d; want them different", origTerm)
 	}
 
-	// But new values will be committed...
-	h.SubmitToServer(origLeaderId, 9)
-	h.SubmitToServer(origLeaderId, 10)
-	h.SubmitToServer(origLeaderId, 11)
+	// But new values will be committed for sure...
+	h.SubmitToServer(newLeaderId, 9)
+	h.SubmitToServer(newLeaderId, 10)
+	h.SubmitToServer(newLeaderId, 11)
 	sleepMs(350)
 
 	for _, v := range []int{9, 10, 11} {
 		h.CheckCommittedN(v, 3)
 	}
+}
+
+func TestDisconnectLeaderBriefly(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Submit a couple of values to a fully connected cluster.
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+
+	sleepMs(250)
+	h.CheckCommittedN(6, 3)
+
+	// Disconnect leader for a short time (less than election timeout in peers).
+	h.DisconnectPeer(origLeaderId)
+	sleepMs(90)
+	h.ReconnectPeer(origLeaderId)
+	sleepMs(200)
+
+	h.SubmitToServer(origLeaderId, 7)
+	sleepMs(250)
+	h.CheckCommittedN(7, 3)
 }
 
 func TestCommitsWithLeaderDisconnects(t *testing.T) {
