@@ -623,7 +623,11 @@ func (cm *ConsensusModule) leaderSendAEs() {
 						}
 						if cm.commitIndex != savedCommitIndex {
 							cm.dlog("leader sets commitIndex := %d", cm.commitIndex)
+							// Commit index changed: the leader considers new entries to be
+							// committed. Send new entries on the commit channel to this
+							// leader's clients, and notify followers by sending them AEs.
 							cm.newCommitReadyChan <- struct{}{}
+							cm.triggerAEChan <- struct{}{}
 						}
 					} else {
 						cm.nextIndex[peerId] = ni - 1
