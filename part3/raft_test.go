@@ -510,3 +510,58 @@ func TestCrashThenRestartAll(t *testing.T) {
 		h.CheckCommittedN(v, 3)
 	}
 }
+
+func TestReplaceMultipleLogEntries(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Submit a couple of values to a fully connected cluster.
+	origLeaderId, _ := h.CheckSingleLeader()
+	h.SubmitToServer(origLeaderId, 5)
+	h.SubmitToServer(origLeaderId, 6)
+
+	sleepMs(250)
+	h.CheckCommittedN(6, 3)
+
+	// Leader disconnected...
+	h.DisconnectPeer(origLeaderId)
+	sleepMs(10)
+
+	// Submit a few entries to the original leader; it's disconnected, so they
+	// won't be replicated.
+	h.SubmitToServer(origLeaderId, 21)
+	sleepMs(5)
+	h.SubmitToServer(origLeaderId, 22)
+	sleepMs(5)
+	h.SubmitToServer(origLeaderId, 23)
+	sleepMs(5)
+	h.SubmitToServer(origLeaderId, 24)
+	sleepMs(5)
+
+	newLeaderId, _ := h.CheckSingleLeader()
+
+	// Submit entries to new leader -- these will be replicated.
+	h.SubmitToServer(newLeaderId, 8)
+	sleepMs(5)
+	h.SubmitToServer(newLeaderId, 9)
+	sleepMs(5)
+	h.SubmitToServer(newLeaderId, 10)
+	sleepMs(250)
+	h.CheckNotCommitted(21)
+	h.CheckCommittedN(10, 2)
+
+	// Crash/restart new leader to reset its nextIndex, to ensure that the new
+	// leader of the cluster (could be the third server after elections) tries
+	// to replace the original's servers unreplicated entries from the very end.
+	h.CrashPeer(newLeaderId)
+	sleepMs(60)
+	h.RestartPeer(newLeaderId)
+	sleepMs(60)
+
+	h.ReconnectPeer(origLeaderId)
+	sleepMs(400)
+
+	// At this point, 10 should be replicated everywhere; 21 won't be.
+	h.CheckNotCommitted(21)
+	h.CheckCommittedN(10, 3)
+}
