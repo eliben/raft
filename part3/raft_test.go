@@ -258,9 +258,10 @@ func TestCommitWithDisconnectionAndRecover(t *testing.T) {
 
 	// Now reconnect dPeerId and wait a bit; it should find the new command too.
 	h.ReconnectPeer(dPeerId)
-	sleepMs(400)
+	sleepMs(250)
 	h.CheckSingleLeader()
 
+	sleepMs(150)
 	h.CheckCommittedN(7, 3)
 }
 
