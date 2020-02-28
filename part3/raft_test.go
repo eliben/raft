@@ -556,12 +556,20 @@ func TestReplaceMultipleLogEntries(t *testing.T) {
 	h.CrashPeer(newLeaderId)
 	sleepMs(60)
 	h.RestartPeer(newLeaderId)
-	sleepMs(60)
 
+	sleepMs(100)
+	finalLeaderId, _ := h.CheckSingleLeader()
 	h.ReconnectPeer(origLeaderId)
 	sleepMs(400)
 
-	// At this point, 10 should be replicated everywhere; 21 won't be.
+	// Submit another entry; this is because leaders won't commit entries from
+	// previous terms (paper 5.4.2) so the 8,9,10 may not be committed everywhere
+	// after the restart before a new command comes it.
+	h.SubmitToServer(finalLeaderId, 11)
+	sleepMs(250)
+
+	// At this point, 11 and 10 should be replicated everywhere; 21 won't be.
 	h.CheckNotCommitted(21)
+	h.CheckCommittedN(11, 3)
 	h.CheckCommittedN(10, 3)
 }

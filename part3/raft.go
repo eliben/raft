@@ -628,7 +628,6 @@ func (cm *ConsensusModule) leaderSendAEs() {
 					if reply.Success {
 						cm.nextIndex[peerId] = ni + len(entries)
 						cm.matchIndex[peerId] = cm.nextIndex[peerId] - 1
-						cm.dlog("AppendEntries reply from %d success: nextIndex := %v, matchIndex := %v", peerId, cm.nextIndex, cm.matchIndex)
 
 						savedCommitIndex := cm.commitIndex
 						for i := cm.commitIndex + 1; i < len(cm.log); i++ {
@@ -644,6 +643,7 @@ func (cm *ConsensusModule) leaderSendAEs() {
 								}
 							}
 						}
+						cm.dlog("AppendEntries reply from %d success: nextIndex := %v, matchIndex := %v; commitIndex := %d", peerId, cm.nextIndex, cm.matchIndex, cm.commitIndex)
 						if cm.commitIndex != savedCommitIndex {
 							cm.dlog("leader sets commitIndex := %d", cm.commitIndex)
 							// Commit index changed: the leader considers new entries to be
