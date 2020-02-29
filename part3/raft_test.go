@@ -573,3 +573,30 @@ func TestReplaceMultipleLogEntries(t *testing.T) {
 	h.CheckCommittedN(11, 3)
 	h.CheckCommittedN(10, 3)
 }
+
+func TestCrashAfterSubmit(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Wait for a leader to emerge, and submit a command - then immediately
+	// crash; the leader should have no time to send an updated LeaderCommit
+	// to followers. It doesn't have time to get back AE responses either, so
+	// the leader itself won't send it on the commit channel.
+	origLeaderId, _ := h.CheckSingleLeader()
+
+	h.SubmitToServer(origLeaderId, 5)
+	sleepMs(1)
+	h.CrashPeer(origLeaderId)
+
+	// Make sure 5 is not committed when a new leader is elected.
+	sleepMs(10)
+	h.CheckSingleLeader()
+	sleepMs(300)
+	h.CheckNotCommitted(5)
+
+	// The old leader restarts. After a while, 5 is still not committed.
+	h.RestartPeer(origLeaderId)
+	sleepMs(150)
+	h.CheckSingleLeader()
+	h.CheckNotCommitted(5)
+}

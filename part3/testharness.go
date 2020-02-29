@@ -162,7 +162,9 @@ func (h *Harness) CrashPeer(id int) {
 	// Clear out the commits slice for the crashed server; Raft assumes the client
 	// has no persistent state. Once this server comes back online it will replay
 	// the whole log to us.
+	h.mu.Lock()
 	h.commits[id] = h.commits[id][:0]
+	h.mu.Unlock()
 }
 
 // RestartPeer "restarts" a server by creating a new Server instance and giving
