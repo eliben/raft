@@ -588,7 +588,8 @@ func TestCrashAfterSubmit(t *testing.T) {
 	sleepMs(1)
 	h.CrashPeer(origLeaderId)
 
-	// Make sure 5 is not committed when a new leader is elected.
+	// Make sure 5 is not committed when a new leader is elected. Leaders won't
+	// commit commands from previous terms.
 	sleepMs(10)
 	h.CheckSingleLeader()
 	sleepMs(300)
@@ -597,6 +598,13 @@ func TestCrashAfterSubmit(t *testing.T) {
 	// The old leader restarts. After a while, 5 is still not committed.
 	h.RestartPeer(origLeaderId)
 	sleepMs(150)
-	h.CheckSingleLeader()
+	newLeaderId, _ := h.CheckSingleLeader()
 	h.CheckNotCommitted(5)
+
+	// When we submit a new command, it will be submitted, and so will 5, because
+	// it appears in everyone's logs.
+	h.SubmitToServer(newLeaderId, 6)
+	sleepMs(100)
+	h.CheckCommittedN(5, 3)
+	h.CheckCommittedN(6, 3)
 }
