@@ -6,7 +6,7 @@ algorithm in Go. It's accompanied by a series of blog posts:
 * [Part 0: Introduction](https://eli.thegreenplace.net/2020/implementing-raft-part-0-introduction/)
 * [Part 1: Elections](https://eli.thegreenplace.net/2020/implementing-raft-part-1-elections/)
 * [Part 2: Commands and log replication](https://eli.thegreenplace.net/2020/implementing-raft-part-2-commands-and-log-replication/)
-* Part 3: Persistence and optimizations (coming soon)
+* [Part 3: Persistence and optimizations](https://eli.thegreenplace.net/2020/implementing-raft-part-3-persistence-and-optimizations/)
 
 Each of the `partN` directories in this repository is the complete source code
 for Part N of the blog post series (except Part 0, which is introductory and has
