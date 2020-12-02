@@ -66,14 +66,8 @@ type ConsensusModule struct {
 	log         []LogEntry
 
 	// Volatile Raft state on all servers
-	commitIndex        int
-	lastApplied        int
 	state              CMState
 	electionResetEvent time.Time
-
-	// Volatile Raft state on leaders
-	nextIndex  map[int]int
-	matchIndex map[int]int
 }
 
 // NewConsensusModule creates a new CM with the given ID, list of peer IDs and
