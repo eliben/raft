@@ -300,7 +300,7 @@ func (cm *ConsensusModule) startElection() {
 				} else if reply.Term == savedCurrentTerm {
 					if reply.VoteGranted {
 						votes := int(atomic.AddInt32(&votesReceived, 1))
-						if votes*2 > len(cm.peerIds)+1 {
+						if votes >= len(cm.peerIds)/2+1 {
 							// Won the election!
 							cm.dlog("wins election with %d votes", votes)
 							cm.startLeader()
