@@ -140,7 +140,7 @@ func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 
 // Submit submits a new command to the CM. This function doesn't block; clients
 // read the commit channel passed in the constructor to be notified of new
-// committed entries. It returns true iff this CM is the leader - in which case
+// committed entries. It returns true if this CM is the leader - in which case
 // the command is accepted. If false is returned, the client will have to find
 // a different CM to submit this command to.
 func (cm *ConsensusModule) Submit(command interface{}) bool {

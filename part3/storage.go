@@ -10,7 +10,7 @@ type Storage interface {
 
 	Get(key string) ([]byte, bool)
 
-	// HasData returns true iff any Sets were made on this Storage.
+	// HasData returns true if any Sets were made on this Storage.
 	HasData() bool
 }
 
