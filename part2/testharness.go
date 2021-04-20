@@ -23,7 +23,7 @@ type Harness struct {
 	// cluster is a list of all the raft servers participating in a cluster.
 	cluster []*Server
 
-	// commitChans has a channel per server in cluster with the commi channel for
+	// commitChans has a channel per server in cluster with the commit channel for
 	// that server.
 	commitChans []chan CommitEntry
 
@@ -180,7 +180,7 @@ func (h *Harness) CheckNoLeader() {
 // to Raft should be unique positive ints.
 // Returns the number of servers that have this command committed, and its
 // log index.
-// TODO: this check may be too strict. Consider tha a server can commit
+// TODO: this check may be too strict. Consider that a server can commit
 // something and crash before notifying the channel. It's a valid commit but
 // this checker will fail because it may not match other servers. This scenario
 // is described in the paper...
