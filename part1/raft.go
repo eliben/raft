@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -271,7 +270,7 @@ func (cm *ConsensusModule) startElection() {
 	cm.votedFor = cm.id
 	cm.dlog("becomes Candidate (currentTerm=%d); log=%v", savedCurrentTerm, cm.log)
 
-	var votesReceived int32 = 1
+	votesReceived := 1
 
 	// Send RequestVote RPCs to all other servers concurrently.
 	for _, peerId := range cm.peerIds {
@@ -299,10 +298,10 @@ func (cm *ConsensusModule) startElection() {
 					return
 				} else if reply.Term == savedCurrentTerm {
 					if reply.VoteGranted {
-						votes := int(atomic.AddInt32(&votesReceived, 1))
-						if votes*2 > len(cm.peerIds)+1 {
+						votesReceived += 1
+						if votesReceived*2 > len(cm.peerIds)+1 {
 							// Won the election!
-							cm.dlog("wins election with %d votes", votes)
+							cm.dlog("wins election with %d votes", votesReceived)
 							cm.startLeader()
 							return
 						}
