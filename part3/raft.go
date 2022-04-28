@@ -573,6 +573,7 @@ func (cm *ConsensusModule) startLeader() {
 			}
 
 			if doSend {
+				// If this isn't a leader any more, stop the heartbeat loop.
 				cm.mu.Lock()
 				if cm.state != Leader {
 					cm.mu.Unlock()
@@ -589,6 +590,10 @@ func (cm *ConsensusModule) startLeader() {
 // replies and adjusts cm's state.
 func (cm *ConsensusModule) leaderSendAEs() {
 	cm.mu.Lock()
+	if cm.state != Leader {
+		cm.mu.Unlock()
+		return
+	}
 	savedCurrentTerm := cm.currentTerm
 	cm.mu.Unlock()
 
