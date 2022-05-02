@@ -244,23 +244,24 @@ func TestCommitWithDisconnectionAndRecover(t *testing.T) {
 	h.SubmitToServer(origLeaderId, 5)
 	h.SubmitToServer(origLeaderId, 6)
 
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(6, 3)
 
 	dPeerId := (origLeaderId + 1) % 3
 	h.DisconnectPeer(dPeerId)
-	sleepMs(150)
+	sleepMs(250)
 
 	// Submit a new command; it will be committed but only to two servers.
 	h.SubmitToServer(origLeaderId, 7)
-	sleepMs(150)
+	sleepMs(250)
 	h.CheckCommittedN(7, 2)
 
 	// Now reconnect dPeerId and wait a bit; it should find the new command too.
 	h.ReconnectPeer(dPeerId)
-	sleepMs(400)
+	sleepMs(200)
 	h.CheckSingleLeader()
 
+	sleepMs(150)
 	h.CheckCommittedN(7, 3)
 }
 
