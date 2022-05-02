@@ -622,7 +622,7 @@ func (cm *ConsensusModule) leaderSendAEs() {
 			if err := cm.server.Call(peerId, "ConsensusModule.AppendEntries", args, &reply); err == nil {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()
-				if reply.Term > savedCurrentTerm {
+				if reply.Term > cm.currentTerm {
 					cm.dlog("term out of date in heartbeat reply")
 					cm.becomeFollower(reply.Term)
 					return
