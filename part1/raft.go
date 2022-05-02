@@ -356,6 +356,10 @@ func (cm *ConsensusModule) startLeader() {
 // replies and adjusts cm's state.
 func (cm *ConsensusModule) leaderSendHeartbeats() {
 	cm.mu.Lock()
+	if cm.state != Leader {
+		cm.mu.Unlock()
+		return
+	}
 	savedCurrentTerm := cm.currentTerm
 	cm.mu.Unlock()
 
