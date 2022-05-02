@@ -128,7 +128,7 @@ func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, 
 	cm.matchIndex = make(map[int]int)
 
 	if cm.storage.HasData() {
-		cm.restoreFromStorage(cm.storage)
+		cm.restoreFromStorage()
 	}
 
 	go func() {
@@ -186,7 +186,7 @@ func (cm *ConsensusModule) Stop() {
 
 // restoreFromStorage restores the persistent state of this CM from storage.
 // It should be called during constructor, before any concurrency concerns.
-func (cm *ConsensusModule) restoreFromStorage(storage Storage) {
+func (cm *ConsensusModule) restoreFromStorage() {
 	if termData, found := cm.storage.Get("currentTerm"); found {
 		d := gob.NewDecoder(bytes.NewBuffer(termData))
 		if err := d.Decode(&cm.currentTerm); err != nil {
