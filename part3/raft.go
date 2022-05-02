@@ -184,7 +184,7 @@ func (cm *ConsensusModule) Stop() {
 	close(cm.newCommitReadyChan)
 }
 
-// restoreFromStorage restores the persistent stat of this CM from storage.
+// restoreFromStorage restores the persistent state of this CM from storage.
 // It should be called during constructor, before any concurrency concerns.
 func (cm *ConsensusModule) restoreFromStorage(storage Storage) {
 	if termData, found := cm.storage.Get("currentTerm"); found {
