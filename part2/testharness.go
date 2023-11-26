@@ -6,7 +6,6 @@ package raft
 
 import (
 	"log"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +13,6 @@ import (
 
 func init() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	rand.Seed(time.Now().UnixNano())
 }
 
 type Harness struct {

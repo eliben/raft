@@ -289,7 +289,7 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 
 			// Set commit index.
 			if args.LeaderCommit > cm.commitIndex {
-				cm.commitIndex = intMin(args.LeaderCommit, len(cm.log)-1)
+				cm.commitIndex = min(args.LeaderCommit, len(cm.log)-1)
 				cm.dlog("... setting commitIndex=%d", cm.commitIndex)
 				cm.newCommitReadyChan <- struct{}{}
 			}
@@ -580,11 +580,4 @@ func (cm *ConsensusModule) commitChanSender() {
 		}
 	}
 	cm.dlog("commitChanSender done")
-}
-
-func intMin(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
