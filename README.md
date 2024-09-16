@@ -60,8 +60,12 @@ $ go test -race ./...
 ```
 
 Depending on the part and your machine, the tests can take up to a minute to
-run. Feel free to enable verbose logging with ``-v``, and/or used the provided
-``dotest.sh`` script to run specific tests with log visualization.
+run. Feel free to enable verbose logging with `-v`, and/or used the provided
+`dotest.sh` script to run specific tests with log visualization.
+
+Note: for part3, the actual Raft code is in a `part3/raft` subdirectory, to
+be importable from future parts. All the instructions discussed so far work
+with part3 as well - you just have to `cd` one directory deeper.
 
 ## Contributing
 
