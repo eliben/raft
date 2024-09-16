@@ -10,6 +10,8 @@ type KVService struct {
 	id         int
 	rs         *raft.Server
 	commitChan chan raft.CommitEntry
+
+	ds *DataStore
 }
 
 func New(id int, peerIds []int, readyChan <-chan any) *KVService {
@@ -24,6 +26,7 @@ func New(id int, peerIds []int, readyChan <-chan any) *KVService {
 		id:         id,
 		rs:         rs,
 		commitChan: commitChan,
+		ds:         NewDataStore(),
 	}
 }
 
