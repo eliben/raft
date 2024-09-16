@@ -1,4 +1,4 @@
-module github.com/eliben/raft
+module github.com/eliben/raft/part3/raft
 
 go 1.21
 
