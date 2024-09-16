@@ -22,7 +22,7 @@ type Harness struct {
 	cluster []*Server
 	storage []*MapStorage
 
-	// commitChans has a channel per server in cluster with the commi channel for
+	// commitChans has a channel per server in cluster with the commit channel for
 	// that server.
 	commitChans []chan CommitEntry
 
