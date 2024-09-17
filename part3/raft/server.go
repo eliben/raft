@@ -96,6 +96,11 @@ func (s *Server) Serve() {
 	}()
 }
 
+// Submit wraps the underlying CM's Submit; see that method for documentation.
+func (s *Server) Submit(cmd interface{}) int {
+	return s.cm.Submit(cmd)
+}
+
 // DisconnectAll closes all the client connections to peers for this server.
 func (s *Server) DisconnectAll() {
 	s.mu.Lock()
@@ -163,10 +168,10 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 
 // RPCProxy is a trivial pass-thru proxy type for ConsensusModule's RPC methods.
 // It's useful for:
-// - Simulating a small delay in RPC transmission.
-// - Avoiding running into https://github.com/golang/go/issues/19957
-// - Simulating possible unreliable connections by delaying some messages
-//   significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
+//   - Simulating a small delay in RPC transmission.
+//   - Avoiding running into https://github.com/golang/go/issues/19957
+//   - Simulating possible unreliable connections by delaying some messages
+//     significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
 type RPCProxy struct {
 	cm *ConsensusModule
 }

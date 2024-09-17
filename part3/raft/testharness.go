@@ -326,7 +326,7 @@ func (h *Harness) CheckNotCommitted(cmd int) {
 
 // SubmitToServer submits the command to serverId.
 func (h *Harness) SubmitToServer(serverId int, cmd interface{}) int {
-	return h.cluster[serverId].cm.Submit(cmd)
+	return h.cluster[serverId].Submit(cmd)
 }
 
 func tlog(format string, a ...interface{}) {
