@@ -2,6 +2,8 @@ package kvservice
 
 import "sync"
 
+// DataStore is a simple, concurrency-safe key-value store used as a backend
+// for kvservice.
 type DataStore struct {
 	sync.Mutex
 	data map[string]string

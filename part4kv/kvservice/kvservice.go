@@ -15,12 +15,11 @@ type KVService struct {
 }
 
 func New(id int, peerIds []int, readyChan <-chan any) *KVService {
-	storage := raft.NewMapStorage()
 	commitChan := make(chan raft.CommitEntry)
 
 	// raft.Server handles the Raft RPCs in the cluster; after Serve is called,
 	// it's ready to accept RPC connections from peers.
-	rs := raft.NewServer(id, peerIds, storage, readyChan, commitChan)
+	rs := raft.NewServer(id, peerIds, raft.NewMapStorage(), readyChan, commitChan)
 	rs.Serve()
 	return &KVService{
 		id:         id,
