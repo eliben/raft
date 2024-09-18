@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/eliben/raft/part3/raft"
+	"github.com/eliben/raft/part4kv/api"
 )
 
 type KVService struct {
@@ -99,11 +100,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
-	type putRequest struct {
-		Key   string
-		Value string
-	}
-	pr := &putRequest{}
+	pr := &api.PutRequest{}
 	err := readRequestJSON(req, pr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -124,12 +121,41 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	logIndex := kvs.rs.Submit(cmd)
 
 	// If we're not the Raft leader, send an appropriate status
-	// TODO
+	if logIndex < 0 {
+		renderJSON(w, api.PutResponse{Status: api.StatusNotLeader})
+		return
+	}
+
+	// We're the Raft leader, so we should respond. The command has already been
+	// submitted, and now we wait for it to be committed. sub will be sent
+	// all commit entries by the updater.
+	for entry := range sub {
+		// Wait until we see a committed command with the same logIndex we expect.
+		if entry.Index != logIndex {
+			continue
+		}
+
+		// If this is our command, all is good! If it's some other server's command,
+		// this means we lost leadership at some point and should return an error
+		// to the client.
+		entryCmd := entry.Command.(Command)
+		if entryCmd.id == kvs.id {
+			if entryCmd != cmd {
+				panic(fmt.Errorf("mismatch in entry command: got %v, want %v", entryCmd, cmd))
+			}
+			renderJSON(w, api.PutResponse{Status: api.StatusOK})
+		} else {
+			renderJSON(w, api.PutResponse{Status: api.StatusFailedCommit})
+		}
+		return
+	}
 }
 
 // runUpdater runs the "updater" goroutine that reads the commit channel
 // from Raft and updates the data store; this is the Replicated State Machine
 // part of distributed consensus!
+// It also notifies subscribers (registered with createCommitSubsciption) of
+// each commit entry.
 func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
@@ -143,6 +169,7 @@ func (kvs *KVService) runUpdater() {
 				panic(fmt.Errorf("unexpected command %v", cmd))
 			}
 
+			// Forward this entry to all current subscribers.
 			kvs.Lock()
 			for _, sub := range kvs.commitSubscribers {
 				sub <- entry
@@ -152,6 +179,11 @@ func (kvs *KVService) runUpdater() {
 	}()
 }
 
+// createCommitSubsciption creates a "commit subscription", a new channel that
+// will get sent all CommitEntry values by the updater. This is a buffered
+// channel, and it should be read as fast as possible. To remove the channel
+// from the subscription list, call removeCommitSubscription (that function
+// also closes the channel).
 func (kvs *KVService) createCommitSubsciption() chan raft.CommitEntry {
 	kvs.Lock()
 	defer kvs.Unlock()
@@ -165,7 +197,12 @@ func (kvs *KVService) removeCommitSubscription(ch chan raft.CommitEntry) {
 	kvs.Lock()
 	defer kvs.Unlock()
 
+	// Note: the list's size is O(concurrent REST requests waiting for responses).
+	// This number is expected to be very low almost all the time, so we don't
+	// worry about the performance of deleting from a slice; it can easily be
+	// replaced by some sort of set data structure, if needed.
 	kvs.commitSubscribers = slices.DeleteFunc(kvs.commitSubscribers, func(c chan raft.CommitEntry) bool {
 		return c == ch
 	})
+	close(ch)
 }

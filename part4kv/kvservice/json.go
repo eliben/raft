@@ -1,4 +1,4 @@
-package main
+package kvservice
 
 import (
 	"encoding/json"
