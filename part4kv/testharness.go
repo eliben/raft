@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"testing"
 
@@ -60,7 +59,10 @@ func NewHarness(t *testing.T, n int) *Harness {
 
 func (h *Harness) Shutdown() {
 	for i := range h.n {
-		fmt.Println("XXX shutting down", i)
+		h.kvCluster[i].DisconnectFromRaftPeers()
+	}
+
+	for i := range h.n {
 		if err := h.kvCluster[i].Shutdown(); err != nil {
 			h.t.Errorf("error while shutting down service %d: %v", i, err)
 		}

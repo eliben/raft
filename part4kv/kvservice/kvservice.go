@@ -58,6 +58,10 @@ func (kvs *KVService) ConnectToRaftPeer(peerId int, addr net.Addr) error {
 	return kvs.rs.ConnectToPeer(peerId, addr)
 }
 
+func (kvs *KVService) DisconnectFromRaftPeers() {
+	kvs.rs.DisconnectAll()
+}
+
 func (kvs *KVService) GetRaftListenAddr() net.Addr {
 	return kvs.rs.GetListenAddr()
 }
@@ -79,32 +83,26 @@ func (kvs *KVService) ServeHTTP(port string) {
 	}
 
 	go func() {
-		fmt.Println("YY will listen")
 		if err := kvs.srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
-		fmt.Println("YY done listen")
 		kvs.srv = nil
 	}()
 }
 
-// Shutdown performs a proper shutdown of the service; it disconnects from
-// all Raft peers, shuts down the Raft RPC server, and shuts down the main
-// HTTP service. It only returns once shutdown is complete.
+// Shutdown performs a proper shutdown of the service: shuts down the Raft RPC
+// server, and shuts down the main HTTP service. It only returns once shutdown
+// is complete.
+// Note: DisconnectFromRaftPeers on all peers in the cluster should be done
+// before Shutdown is called.
 func (kvs *KVService) Shutdown() error {
-	fmt.Println("YY disconnect")
-	kvs.rs.DisconnectAll()
-	fmt.Println("YY rs shutdown")
 	kvs.rs.Shutdown()
-	fmt.Println("YY close commitChan")
 	close(kvs.commitChan)
 
 	if kvs.srv != nil {
-		fmt.Println("YY srv shutdown")
 		return kvs.srv.Shutdown(context.Background())
 	}
 
-	fmt.Println("YY shutdown return")
 	return nil
 }
 
