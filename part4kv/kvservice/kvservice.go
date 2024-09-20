@@ -70,6 +70,12 @@ func (kvs *KVService) GetRaftListenAddr() net.Addr {
 	return kvs.rs.GetListenAddr()
 }
 
+// IsLeader checks if kvs thinks it's the leader in the Raft cluster. Only
+// use this for testin and debugging.
+func (kvs *KVService) IsLeader() bool {
+	return kvs.rs.IsLeader()
+}
+
 // ServeHTTP starts serving the KV REST API on the given TCP port. This
 // function does not block; it fires up the HTTP server and returns. To properly
 // shut down the server, call the Shutdown method.

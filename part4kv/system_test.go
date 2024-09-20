@@ -17,7 +17,7 @@ func TestSetupHarness(t *testing.T) {
 func TestConnectWithClient(t *testing.T) {
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
-	time.Sleep(250 * time.Millisecond)
+	h.CheckSingleLeader()
 
 	c1 := kvclient.New(h.kvServiceAddrs)
 	if err := c1.Put("llave", "formigadon"); err != nil {

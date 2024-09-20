@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/eliben/raft/part4kv/kvservice"
 )
@@ -82,4 +83,29 @@ func (h *Harness) Shutdown() {
 			h.t.Errorf("error while shutting down service %d: %v", i, err)
 		}
 	}
+}
+
+// CheckSingleLeader checks that only a single server thinks it's the leader.
+// Returns the leader's id in the Raft cluster. It retries serveral times if
+// no leader is identified yet.
+func (h *Harness) CheckSingleLeader() int {
+	for r := 0; r < 8; r++ {
+		leaderId := -1
+		for i := range h.n {
+			if h.kvCluster[i].IsLeader() {
+				if leaderId < 0 {
+					leaderId = i
+				} else {
+					h.t.Fatalf("both %d and %d think they're leaders", leaderId, i)
+				}
+			}
+		}
+		if leaderId >= 0 {
+			return leaderId
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	h.t.Fatalf("leader not found")
+	return -1
 }
