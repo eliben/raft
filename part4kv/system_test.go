@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestConnectWithClient(t *testing.T) {
 	h.CheckSingleLeader()
 
 	c1 := kvclient.New(h.kvServiceAddrs)
-	if err := c1.Put("llave", "formigadon"); err != nil {
+	if err := c1.Put(context.Background(), "llave", "formigadon"); err != nil {
 		log.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond)

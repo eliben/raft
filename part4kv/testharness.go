@@ -87,7 +87,8 @@ func (h *Harness) Shutdown() {
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.
 // Returns the leader's id in the Raft cluster. It retries serveral times if
-// no leader is identified yet.
+// no leader is identified yet, so this method is also useful to check that
+// the Raft cluster settled on a leader and is ready to execute commands.
 func (h *Harness) CheckSingleLeader() int {
 	for r := 0; r < 8; r++ {
 		leaderId := -1
