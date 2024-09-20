@@ -2,6 +2,7 @@ package kvservice
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net"
@@ -39,6 +40,7 @@ type KVService struct {
 //   - readyChan: notification channel that has to be closed when the Raft
 //     cluster is ready (all peers are up and connected to each other).
 func New(id int, peerIds []int, readyChan <-chan any) *KVService {
+	gob.Register(Command{})
 	commitChan := make(chan raft.CommitEntry)
 
 	// raft.Server handles the Raft RPCs in the cluster; after Serve is called,
@@ -130,10 +132,10 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	defer kvs.removeCommitSubscription(sub)
 
 	cmd := Command{
-		kind:  CommandPut,
-		key:   pr.Key,
-		value: pr.Value,
-		id:    kvs.id,
+		Kind:  CommandPut,
+		Key:   pr.Key,
+		Value: pr.Value,
+		Id:    kvs.id,
 	}
 	logIndex := kvs.rs.Submit(cmd)
 
@@ -156,7 +158,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// this means we lost leadership at some point and should return an error
 		// to the client.
 		entryCmd := entry.Command.(Command)
-		if entryCmd.id == kvs.id {
+		if entryCmd.Id == kvs.id {
 			if entryCmd != cmd {
 				panic(fmt.Errorf("mismatch in entry command: got %v, want %v", entryCmd, cmd))
 			}
@@ -178,10 +180,10 @@ func (kvs *KVService) runUpdater() {
 		for entry := range kvs.commitChan {
 			cmd := entry.Command.(Command)
 
-			switch cmd.kind {
+			switch cmd.Kind {
 			case CommandGet:
 			case CommandPut:
-				kvs.ds.Put(cmd.key, cmd.value)
+				kvs.ds.Put(cmd.Key, cmd.Value)
 			default:
 				panic(fmt.Errorf("unexpected command %v", cmd))
 			}

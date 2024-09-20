@@ -8,12 +8,12 @@ package kvservice
 // CommandGet: key is the key to get, value is ignored
 // CommandPut: assigns value to the key
 type Command struct {
-	kind CommandKind
+	Kind CommandKind
 
-	key, value string
+	Key, Value string
 
 	// id is the Raft ID of the server submitting this command.
-	id int
+	Id int
 }
 
 type CommandKind int
