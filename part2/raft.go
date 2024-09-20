@@ -166,7 +166,7 @@ func (cm *ConsensusModule) Stop() {
 	close(cm.newCommitReadyChan)
 }
 
-// dlog logs a debugging message is DebugCM > 0.
+// dlog logs a debugging message if DebugCM > 0.
 func (cm *ConsensusModule) dlog(format string, args ...interface{}) {
 	if DebugCM > 0 {
 		format = fmt.Sprintf("[%d] ", cm.id) + format
