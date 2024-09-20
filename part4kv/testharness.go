@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"testing"
 
@@ -18,6 +19,10 @@ type Harness struct {
 	// kvCluster is a list of all KVService instances participating in a cluster.
 	// A service's index into this list is its ID in the cluster.
 	kvCluster []*kvservice.KVService
+
+	// kvServiceAddrs is a list of HTTP addresses (localhost:<PORT>) the KV
+	// services are accepting client commands on.
+	kvServiceAddrs []string
 
 	t *testing.T
 }
@@ -50,15 +55,19 @@ func NewHarness(t *testing.T, n int) *Harness {
 	close(ready)
 
 	// Each KVService instance serves a REST API on a different port
+	kvServiceAddrs := make([]string, n)
 	for i := range n {
 		port := 14200 + i
 		kvss[i].ServeHTTP(port)
+
+		kvServiceAddrs[i] = fmt.Sprintf("localhost:%d", port)
 	}
 
 	h := &Harness{
-		n:         n,
-		kvCluster: kvss,
-		t:         t,
+		n:              n,
+		kvCluster:      kvss,
+		kvServiceAddrs: kvServiceAddrs,
+		t:              t,
 	}
 	return h
 }

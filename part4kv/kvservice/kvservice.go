@@ -122,6 +122,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	kvs.kvlog("received PUT %v", pr)
 
 	// Create a command and submit it, but first create a subscription for
 	// new commits - to avoid potential race conditions.
