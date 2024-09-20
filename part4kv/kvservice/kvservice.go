@@ -13,6 +13,8 @@ import (
 	"github.com/eliben/raft/part4kv/api"
 )
 
+const DebugKV = 1
+
 type KVService struct {
 	sync.Mutex
 
@@ -69,7 +71,7 @@ func (kvs *KVService) GetRaftListenAddr() net.Addr {
 // ServeHTTP starts serving the KV REST API on the given TCP port. This
 // function does not block; it fires up the HTTP server and returns. To properly
 // shut down the server, call the Shutdown method.
-func (kvs *KVService) ServeHTTP(port string) {
+func (kvs *KVService) ServeHTTP(port int) {
 	if kvs.srv != nil {
 		panic("ServeHTTP called with existing server")
 	}
@@ -78,11 +80,12 @@ func (kvs *KVService) ServeHTTP(port string) {
 	mux.HandleFunc("POST /put/", kvs.handlePut)
 
 	kvs.srv = &http.Server{
-		Addr:    ":" + port,
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
 	go func() {
+		kvs.kvlog("serving HTTP on %s", kvs.srv.Addr)
 		if err := kvs.srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
@@ -96,10 +99,12 @@ func (kvs *KVService) ServeHTTP(port string) {
 // Note: DisconnectFromRaftPeers on all peers in the cluster should be done
 // before Shutdown is called.
 func (kvs *KVService) Shutdown() error {
+	kvs.kvlog("shutting down Raft server")
 	kvs.rs.Shutdown()
 	close(kvs.commitChan)
 
 	if kvs.srv != nil {
+		kvs.kvlog("shutting down HTTP server")
 		return kvs.srv.Shutdown(context.Background())
 	}
 
@@ -216,4 +221,12 @@ func (kvs *KVService) removeCommitSubscription(ch chan raft.CommitEntry) {
 		return c == ch
 	})
 	close(ch)
+}
+
+// kvlog logs a debugging message if DebugKV > 0
+func (kvs *KVService) kvlog(format string, args ...any) {
+	if DebugKV > 0 {
+		format = fmt.Sprintf("[kv %d] ", kvs.id) + format
+		log.Printf(format, args...)
+	}
 }

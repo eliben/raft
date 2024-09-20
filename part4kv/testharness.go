@@ -49,6 +49,12 @@ func NewHarness(t *testing.T, n int) *Harness {
 	}
 	close(ready)
 
+	// Each KVService instance serves a REST API on a different port
+	for i := range n {
+		port := 14200 + i
+		kvss[i].ServeHTTP(port)
+	}
+
 	h := &Harness{
 		n:         n,
 		kvCluster: kvss,
