@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"testing"
 	"time"
 
+	"github.com/eliben/raft/part4kv/kvclient"
 	"github.com/eliben/raft/part4kv/kvservice"
 )
 
@@ -109,4 +111,27 @@ func (h *Harness) CheckSingleLeader() int {
 
 	h.t.Fatalf("leader not found")
 	return -1
+}
+
+// CheckPut sends a Put request through client c, and checks there are no
+// errors. Returns (prevValue, keyFound).
+func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, bool) {
+	pv, f, err := c.Put(context.Background(), key, value)
+	if err != nil {
+		h.t.Error(err)
+	}
+	return pv, f
+}
+
+// CheckGetFound sends a Get request through client c, and checks there are
+// no errors; it also checks that the key was found, and returns its value.
+func (h *Harness) CheckGetFound(c *kvclient.KVClient, key string) string {
+	gv, f, err := c.Get(context.Background(), key)
+	if err != nil {
+		h.t.Error(err)
+	}
+	if !f {
+		h.t.Errorf("got found=false, want true for key=%s", key)
+	}
+	return gv
 }
