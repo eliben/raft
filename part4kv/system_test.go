@@ -25,4 +25,8 @@ func TestConnectWithClient(t *testing.T) {
 		log.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond)
+	if err := c1.Put(context.Background(), "mafteah", "davar"); err != nil {
+		log.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
 }

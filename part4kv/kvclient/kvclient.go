@@ -40,8 +40,8 @@ func (c *KVClient) Put(ctx context.Context, key string, value string) error {
 			Value: value,
 		}
 		c.clientlog("sending %v to %v", putReq, path)
-		putResp, err := sendJSONRequest[api.PutResponse](ctx, path, putReq)
-		if err != nil {
+		var putResp api.PutResponse
+		if err := sendJSONRequest(ctx, path, putReq, &putResp); err != nil {
 			return err
 		}
 		c.clientlog("received response %v", putResp)
@@ -68,28 +68,27 @@ func (c *KVClient) clientlog(format string, args ...any) {
 	}
 }
 
-func sendJSONRequest[ResponseT any](ctx context.Context, path string, data any) (*ResponseT, error) {
+func sendJSONRequest(ctx context.Context, path string, reqData any, respData any) error {
 	body := new(bytes.Buffer)
 	enc := json.NewEncoder(body)
-	if err := enc.Encode(data); err != nil {
-		return nil, fmt.Errorf("JSON-encoding request data: %w", err)
+	if err := enc.Encode(reqData); err != nil {
+		return fmt.Errorf("JSON-encoding request data: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, path, body)
 	if err != nil {
-		return nil, fmt.Errorf("creating HTTP request: %w", err)
+		return fmt.Errorf("creating HTTP request: %w", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("issuing HTTP request: %w", err)
+		return fmt.Errorf("issuing HTTP request: %w", err)
 	}
 
-	var responseData ResponseT
 	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(&responseData); err != nil {
-		return nil, fmt.Errorf("JSON-decoding response data: %w", err)
+	if err := dec.Decode(respData); err != nil {
+		return fmt.Errorf("JSON-decoding response data: %w", err)
 	}
-	return &responseData, nil
+	return nil
 }

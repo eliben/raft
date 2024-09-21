@@ -189,15 +189,23 @@ func (kvs *KVService) runUpdater() {
 			switch cmd.Kind {
 			case CommandGet:
 			case CommandPut:
-				kvs.ds.Put(cmd.Key, cmd.Value)
+				cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
 			default:
 				panic(fmt.Errorf("unexpected command %v", cmd))
+			}
+
+			// We're modifying the command to include results from the datastore,
+			// so clone an entry with the update command for the subscibers.
+			newEntry := raft.CommitEntry{
+				Command: cmd,
+				Index:   entry.Index,
+				Term:    entry.Term,
 			}
 
 			// Forward this entry to all current subscribers.
 			kvs.Lock()
 			for _, sub := range kvs.commitSubscribers {
-				sub <- entry
+				sub <- newEntry
 			}
 			kvs.Unlock()
 		}
