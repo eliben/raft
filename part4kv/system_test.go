@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -21,12 +22,23 @@ func TestConnectWithClient(t *testing.T) {
 	h.CheckSingleLeader()
 
 	c1 := kvclient.New(h.kvServiceAddrs)
-	if err := c1.Put(context.Background(), "llave", "formigadon"); err != nil {
+	pv, f, err := c1.Put(context.Background(), "llave", "formigadon")
+	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(pv, f)
 	time.Sleep(100 * time.Millisecond)
-	if err := c1.Put(context.Background(), "mafteah", "davar"); err != nil {
+
+	pv, f, err = c1.Put(context.Background(), "mafteah", "davar")
+	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(pv, f)
 	time.Sleep(100 * time.Millisecond)
+
+	pv, f, err = c1.Put(context.Background(), "llave", "nexus")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(pv, f)
 }

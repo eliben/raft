@@ -165,10 +165,11 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.Id == kvs.id {
-			if entryCmd != cmd {
-				panic(fmt.Errorf("mismatch in entry command: got %v, want %v", entryCmd, cmd))
-			}
-			renderJSON(w, api.PutResponse{Status: api.StatusOK})
+			renderJSON(w, api.PutResponse{
+				Status:    api.StatusOK,
+				KeyFound:  entryCmd.ResultFound,
+				PrevValue: entryCmd.ResultValue,
+			})
 		} else {
 			renderJSON(w, api.PutResponse{Status: api.StatusFailedCommit})
 		}

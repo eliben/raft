@@ -32,7 +32,11 @@ func New(serviceAddrs []string) *KVClient {
 	}
 }
 
-func (c *KVClient) Put(ctx context.Context, key string, value string) error {
+// Put the key=value pair into the store. Returns an error, or
+// (prevValue, keyFound, false), where keyFound specifies whether the key was
+// found in the store prior to this command, and prevValue is its previous
+// value if it was found.
+func (c *KVClient) Put(ctx context.Context, key string, value string) (string, bool, error) {
 	for {
 		path := fmt.Sprintf("http://%s/put/", c.addrs[c.assumedLeader])
 		putReq := api.PutRequest{
@@ -42,7 +46,7 @@ func (c *KVClient) Put(ctx context.Context, key string, value string) error {
 		c.clientlog("sending %v to %v", putReq, path)
 		var putResp api.PutResponse
 		if err := sendJSONRequest(ctx, path, putReq, &putResp); err != nil {
-			return err
+			return "", false, err
 		}
 		c.clientlog("received response %v", putResp)
 
@@ -51,9 +55,9 @@ func (c *KVClient) Put(ctx context.Context, key string, value string) error {
 			c.clientlog("not leader: will try next address")
 			c.assumedLeader = (c.assumedLeader + 1) % len(c.addrs)
 		case api.StatusOK:
-			return nil
+			return putResp.PrevValue, putResp.KeyFound, nil
 		case api.StatusFailedCommit:
-			return fmt.Errorf("commit failed; please retry")
+			return "", false, fmt.Errorf("commit failed; please retry")
 		default:
 			panic("unreachable")
 		}

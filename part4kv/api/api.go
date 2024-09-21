@@ -11,7 +11,9 @@ type PutRequest struct {
 }
 
 type PutResponse struct {
-	Status ResponseStatus
+	Status    ResponseStatus
+	KeyFound  bool
+	PrevValue string
 }
 
 type GetRequest struct {
