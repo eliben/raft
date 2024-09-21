@@ -166,6 +166,12 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 	}
 }
 
+// IsLeader checks if s thinks it's the leader in the Raft cluster.
+func (s *Server) IsLeader() bool {
+	_, _, isLeader := s.cm.Report()
+	return isLeader
+}
+
 // RPCProxy is a trivial pass-thru proxy type for ConsensusModule's RPC methods.
 // It's useful for:
 //   - Simulating a small delay in RPC transmission.
