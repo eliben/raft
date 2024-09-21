@@ -41,4 +41,18 @@ func TestConnectWithClient(t *testing.T) {
 		log.Fatal(err)
 	}
 	fmt.Println(pv, f)
+	time.Sleep(100 * time.Millisecond)
+
+	gv, f, err := c1.Get(context.Background(), "llave")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(gv, f)
+	time.Sleep(100 * time.Millisecond)
+
+	gv, f, err = c1.Get(context.Background(), "zb")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(gv, f)
 }

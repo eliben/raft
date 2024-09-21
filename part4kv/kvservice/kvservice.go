@@ -120,7 +120,56 @@ func (kvs *KVService) Shutdown() error {
 }
 
 func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
+	gr := &api.GetRequest{}
+	err := readRequestJSON(req, gr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	kvs.kvlog("received GET %v", gr)
 
+	// Create a command and submit it, but first create a subscription for
+	// new commits - to avoid potential race conditions.
+	sub := kvs.createCommitSubsciption()
+	defer kvs.removeCommitSubscription(sub)
+
+	cmd := Command{
+		Kind: CommandGet,
+		Key:  gr.Key,
+		Id:   kvs.id,
+	}
+	logIndex := kvs.rs.Submit(cmd)
+
+	// If we're not the Raft leader, send an appropriate status
+	if logIndex < 0 {
+		renderJSON(w, api.GetResponse{RespStatus: api.StatusNotLeader})
+		return
+	}
+
+	// We're the Raft leader, so we should respond. The command has already been
+	// submitted, and now we wait for it to be committed. sub will be sent
+	// all commit entries by the updater.
+	for entry := range sub {
+		// Wait until we see a committed command with the same logIndex we expect.
+		if entry.Index != logIndex {
+			continue
+		}
+
+		// If this is our command, all is good! If it's some other server's command,
+		// this means we lost leadership at some point and should return an error
+		// to the client.
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			renderJSON(w, api.GetResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				Value:      entryCmd.ResultValue,
+			})
+		} else {
+			renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
+		}
+		return
+	}
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
@@ -147,7 +196,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 
 	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
-		renderJSON(w, api.PutResponse{Status: api.StatusNotLeader})
+		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
@@ -166,12 +215,12 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		entryCmd := entry.Command.(Command)
 		if entryCmd.Id == kvs.id {
 			renderJSON(w, api.PutResponse{
-				Status:    api.StatusOK,
-				KeyFound:  entryCmd.ResultFound,
-				PrevValue: entryCmd.ResultValue,
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				PrevValue:  entryCmd.ResultValue,
 			})
 		} else {
-			renderJSON(w, api.PutResponse{Status: api.StatusFailedCommit})
+			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
 		}
 		return
 	}
@@ -189,6 +238,7 @@ func (kvs *KVService) runUpdater() {
 
 			switch cmd.Kind {
 			case CommandGet:
+				cmd.ResultValue, cmd.ResultFound = kvs.ds.Get(cmd.Key)
 			case CommandPut:
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
 			default:

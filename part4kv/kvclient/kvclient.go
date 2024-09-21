@@ -37,27 +37,44 @@ func New(serviceAddrs []string) *KVClient {
 // found in the store prior to this command, and prevValue is its previous
 // value if it was found.
 func (c *KVClient) Put(ctx context.Context, key string, value string) (string, bool, error) {
-	for {
-		path := fmt.Sprintf("http://%s/put/", c.addrs[c.assumedLeader])
-		putReq := api.PutRequest{
-			Key:   key,
-			Value: value,
-		}
-		c.clientlog("sending %v to %v", putReq, path)
-		var putResp api.PutResponse
-		if err := sendJSONRequest(ctx, path, putReq, &putResp); err != nil {
-			return "", false, err
-		}
-		c.clientlog("received response %v", putResp)
+	putReq := api.PutRequest{
+		Key:   key,
+		Value: value,
+	}
+	var putResp api.PutResponse
+	err := c.send(ctx, "put", putReq, &putResp)
+	return putResp.PrevValue, putResp.KeyFound, err
+}
 
-		switch putResp.Status {
+// Get the value of key from the store. Returns an error, or
+// (value, found, false), where found specifies whether the key was found in
+// the store, and value is its value.
+func (c *KVClient) Get(ctx context.Context, key string) (string, bool, error) {
+	getReq := api.GetRequest{
+		Key: key,
+	}
+	var getResp api.GetResponse
+	err := c.send(ctx, "get", getReq, &getResp)
+	return getResp.Value, getResp.KeyFound, err
+}
+
+func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Response) error {
+	for {
+		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)
+		c.clientlog("sending %v to %v", req, path)
+		if err := sendJSONRequest(ctx, path, req, resp); err != nil {
+			return err
+		}
+		c.clientlog("received response %v", resp)
+
+		switch resp.Status() {
 		case api.StatusNotLeader:
 			c.clientlog("not leader: will try next address")
 			c.assumedLeader = (c.assumedLeader + 1) % len(c.addrs)
 		case api.StatusOK:
-			return putResp.PrevValue, putResp.KeyFound, nil
+			return nil
 		case api.StatusFailedCommit:
-			return "", false, fmt.Errorf("commit failed; please retry")
+			return fmt.Errorf("commit failed; please retry")
 		default:
 			panic("unreachable")
 		}

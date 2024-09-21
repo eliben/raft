@@ -10,10 +10,18 @@ type PutRequest struct {
 	Value string
 }
 
+type Response interface {
+	Status() ResponseStatus
+}
+
 type PutResponse struct {
-	Status    ResponseStatus
-	KeyFound  bool
-	PrevValue string
+	RespStatus ResponseStatus
+	KeyFound   bool
+	PrevValue  string
+}
+
+func (pr *PutResponse) Status() ResponseStatus {
+	return pr.RespStatus
 }
 
 type GetRequest struct {
@@ -21,8 +29,13 @@ type GetRequest struct {
 }
 
 type GetResponse struct {
-	Status ResponseStatus
-	Value  string
+	RespStatus ResponseStatus
+	KeyFound   bool
+	Value      string
+}
+
+func (gr *GetResponse) Status() ResponseStatus {
+	return gr.RespStatus
 }
 
 type ResponseStatus int
