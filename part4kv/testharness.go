@@ -106,7 +106,7 @@ func (h *Harness) CheckSingleLeader() int {
 		if leaderId >= 0 {
 			return leaderId
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(80 * time.Millisecond)
 	}
 
 	h.t.Fatalf("leader not found")

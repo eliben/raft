@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -69,4 +70,20 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 		t.Errorf(`got %v, want "v"`, v)
 	}
 	sleepMs(80)
+}
+
+func TestParallelClientsPuts(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+
+	for i := range 10 {
+		go func() {
+			c := kvclient.New(h.kvServiceAddrs)
+			h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		}()
+	}
+	sleepMs(150)
+
+	// TODO: add some gets here to verify
 }

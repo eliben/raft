@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"slices"
 	"sync"
 
 	"github.com/eliben/raft/part3/raft"
@@ -25,10 +24,8 @@ type KVService struct {
 
 	ds *DataStore
 
-	// commitSubscribers is a list of channels that want to be notified of
-	// any committed entries in the Raft log. Edit this list only via the
-	// createCommitSubsciption and removeCommitSubscription methods.
-	commitSubscribers []chan raft.CommitEntry
+	// TODO doc
+	commitSubs map[int]chan raft.CommitEntry
 
 	srv *http.Server
 }
@@ -52,6 +49,7 @@ func New(id int, peerIds []int, readyChan <-chan any) *KVService {
 		rs:         rs,
 		commitChan: commitChan,
 		ds:         NewDataStore(),
+		commitSubs: make(map[int]chan raft.CommitEntry),
 	}
 
 	kvs.runUpdater()
@@ -109,11 +107,14 @@ func (kvs *KVService) ServeHTTP(port int) {
 func (kvs *KVService) Shutdown() error {
 	kvs.kvlog("shutting down Raft server")
 	kvs.rs.Shutdown()
+	kvs.kvlog("closing commitChan")
 	close(kvs.commitChan)
 
 	if kvs.srv != nil {
 		kvs.kvlog("shutting down HTTP server")
-		return kvs.srv.Shutdown(context.Background())
+		err := kvs.srv.Shutdown(context.Background())
+		kvs.kvlog("HTTP shutdown complete")
+		return err
 	}
 
 	return nil
@@ -126,12 +127,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	kvs.kvlog("received GET %v", gr)
-
-	// Create a command and submit it, but first create a subscription for
-	// new commits - to avoid potential race conditions.
-	sub := kvs.createCommitSubsciption()
-	defer kvs.removeCommitSubscription(sub)
+	kvs.kvlog("HTTP GET %v", gr)
 
 	cmd := Command{
 		Kind: CommandGet,
@@ -139,37 +135,34 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		Id:   kvs.id,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-
 	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		renderJSON(w, api.GetResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// We're the Raft leader, so we should respond. The command has already been
-	// submitted, and now we wait for it to be committed. sub will be sent
-	// all commit entries by the updater.
-	for entry := range sub {
-		// Wait until we see a committed command with the same logIndex we expect.
-		if entry.Index != logIndex {
-			continue
-		}
+	// Subsribe for a commit update for our log index. Then wait for it to
+	// be delivered.
+	sub := kvs.createCommitSubsciption(logIndex)
+	kvs.kvlog("... GET created commit sub for index=%d: %v", logIndex, sub)
 
-		// If this is our command, all is good! If it's some other server's command,
-		// this means we lost leadership at some point and should return an error
-		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.GetResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				Value:      entryCmd.ResultValue,
-			})
-		} else {
-			renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
-		}
-		return
+	entry := <-sub
+	kvs.kvlog("... GET received entry %v from sub %v", entry, sub)
+
+	// If this is our command, all is good! If it's some other server's command,
+	// this means we lost leadership at some point and should return an error
+	// to the client.
+	entryCmd := entry.Command.(Command)
+	if entryCmd.Id == kvs.id {
+		renderJSON(w, api.GetResponse{
+			RespStatus: api.StatusOK,
+			KeyFound:   entryCmd.ResultFound,
+			Value:      entryCmd.ResultValue,
+		})
+	} else {
+		renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
 	}
+	return
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
@@ -179,12 +172,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	kvs.kvlog("received PUT %v", pr)
-
-	// Create a command and submit it, but first create a subscription for
-	// new commits - to avoid potential race conditions.
-	sub := kvs.createCommitSubsciption()
-	defer kvs.removeCommitSubscription(sub)
+	kvs.kvlog("HTTP PUT %v", pr)
 
 	cmd := Command{
 		Kind:  CommandPut,
@@ -193,44 +181,39 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		Id:    kvs.id,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-
 	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// We're the Raft leader, so we should respond. The command has already been
-	// submitted, and now we wait for it to be committed. sub will be sent
-	// all commit entries by the updater.
-	for entry := range sub {
-		// Wait until we see a committed command with the same logIndex we expect.
-		if entry.Index != logIndex {
-			continue
-		}
+	// Subsribe for a commit update for our log index. Then wait for it to
+	// be delivered.
+	sub := kvs.createCommitSubsciption(logIndex)
+	kvs.kvlog("... PUT created commit sub for index=%d: %v", logIndex, sub)
 
-		// If this is our command, all is good! If it's some other server's command,
-		// this means we lost leadership at some point and should return an error
-		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.PutResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
-			})
-		} else {
-			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
-		}
-		return
+	entry := <-sub
+	kvs.kvlog("... PUT received entry %v from sub %v", entry, sub)
+
+	// If this is our command, all is good! If it's some other server's command,
+	// this means we lost leadership at some point and should return an error
+	// to the client.
+	entryCmd := entry.Command.(Command)
+	if entryCmd.Id == kvs.id {
+		renderJSON(w, api.PutResponse{
+			RespStatus: api.StatusOK,
+			KeyFound:   entryCmd.ResultFound,
+			PrevValue:  entryCmd.ResultValue,
+		})
+	} else {
+		renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
 	}
 }
 
 // runUpdater runs the "updater" goroutine that reads the commit channel
 // from Raft and updates the data store; this is the Replicated State Machine
 // part of distributed consensus!
-// It also notifies subscribers (registered with createCommitSubsciption) of
-// each commit entry.
+// It also notifies subscribers (registered with createCommitSubsciption).
 func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
@@ -253,42 +236,36 @@ func (kvs *KVService) runUpdater() {
 				Term:    entry.Term,
 			}
 
-			// Forward this entry to all current subscribers.
-			kvs.Lock()
-			for _, sub := range kvs.commitSubscribers {
+			// Forward this entry to the subscriber interested in its index.
+			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
 				sub <- newEntry
+				close(sub)
 			}
-			kvs.Unlock()
 		}
 	}()
 }
 
-// createCommitSubsciption creates a "commit subscription", a new channel that
-// will get sent all CommitEntry values by the updater. This is a buffered
-// channel, and it should be read as fast as possible. To remove the channel
-// from the subscription list, call removeCommitSubscription (that function
-// also closes the channel).
-func (kvs *KVService) createCommitSubsciption() chan raft.CommitEntry {
+// createCommitSubsciption creates a "commit subscription",  ... TODO
+func (kvs *KVService) createCommitSubsciption(logIndex int) chan raft.CommitEntry {
 	kvs.Lock()
 	defer kvs.Unlock()
 
+	if _, exists := kvs.commitSubs[logIndex]; exists {
+		panic(fmt.Sprintf("duplicate commit subscription for logIndex=%d", logIndex))
+	}
+
 	ch := make(chan raft.CommitEntry, 1)
-	kvs.commitSubscribers = append(kvs.commitSubscribers, ch)
+	kvs.commitSubs[logIndex] = ch
 	return ch
 }
 
-func (kvs *KVService) removeCommitSubscription(ch chan raft.CommitEntry) {
+func (kvs *KVService) popCommitSubscription(logIndex int) chan raft.CommitEntry {
 	kvs.Lock()
 	defer kvs.Unlock()
 
-	// Note: the list's size is O(concurrent REST requests waiting for responses).
-	// This number is expected to be very low almost all the time, so we don't
-	// worry about the performance of deleting from a slice; it can easily be
-	// replaced by some sort of set data structure, if needed.
-	kvs.commitSubscribers = slices.DeleteFunc(kvs.commitSubscribers, func(c chan raft.CommitEntry) bool {
-		return c == ch
-	})
-	close(ch)
+	ch := kvs.commitSubs[logIndex]
+	delete(kvs.commitSubs, logIndex)
+	return ch
 }
 
 // kvlog logs a debugging message if DebugKV > 0
