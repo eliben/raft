@@ -715,6 +715,7 @@ func (cm *ConsensusModule) commitChanSender() {
 		cm.dlog("commitChanSender entries=%v, savedLastApplied=%d", entries, savedLastApplied)
 
 		for i, entry := range entries {
+			cm.dlog("send on commitchan i=%v, entry=%v", i, entry)
 			cm.commitChan <- CommitEntry{
 				Command: entry.Command,
 				Index:   savedLastApplied + i + 1,
