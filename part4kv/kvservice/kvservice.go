@@ -21,11 +21,9 @@ type KVService struct {
 	id         int
 	rs         *raft.Server
 	commitChan chan raft.CommitEntry
+	commitSubs map[int]chan raft.CommitEntry
 
 	ds *DataStore
-
-	// TODO doc
-	commitSubs map[int]chan raft.CommitEntry
 
 	srv *http.Server
 }
@@ -144,10 +142,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	// Subsribe for a commit update for our log index. Then wait for it to
 	// be delivered.
 	sub := kvs.createCommitSubsciption(logIndex)
-	kvs.kvlog("... GET created commit sub for index=%d: %v", logIndex, sub)
-
 	entry := <-sub
-	kvs.kvlog("... GET received entry %v from sub %v", entry, sub)
 
 	// If this is our command, all is good! If it's some other server's command,
 	// this means we lost leadership at some point and should return an error
@@ -162,7 +157,6 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	} else {
 		renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
 	}
-	return
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
@@ -190,10 +184,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	// Subsribe for a commit update for our log index. Then wait for it to
 	// be delivered.
 	sub := kvs.createCommitSubsciption(logIndex)
-	kvs.kvlog("... PUT created commit sub for index=%d: %v", logIndex, sub)
-
 	entry := <-sub
-	kvs.kvlog("... PUT received entry %v from sub %v", entry, sub)
 
 	// If this is our command, all is good! If it's some other server's command,
 	// this means we lost leadership at some point and should return an error
@@ -236,7 +227,8 @@ func (kvs *KVService) runUpdater() {
 				Term:    entry.Term,
 			}
 
-			// Forward this entry to the subscriber interested in its index.
+			// Forward this entry to the subscriber interested in its index, and
+			// close the subscription - it's single-use.
 			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
 				sub <- newEntry
 				close(sub)
@@ -245,7 +237,12 @@ func (kvs *KVService) runUpdater() {
 	}()
 }
 
-// createCommitSubsciption creates a "commit subscription",  ... TODO
+// createCommitSubsciption creates a "commit subscription" for a certain log
+// index. It's used by client request handlers that submit a command to the
+// Raft CM. createCommitSubsciption(index) means "I want to be notified when
+// an entry is committed at this index in the Raft log". The entry is delivered
+// on the returend (buffered) channel by the updater goroutine, after which
+// the channel is closed and the subscription is automatically canceled.
 func (kvs *KVService) createCommitSubsciption(logIndex int) chan raft.CommitEntry {
 	kvs.Lock()
 	defer kvs.Unlock()

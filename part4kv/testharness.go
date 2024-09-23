@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"testing"
 	"time"
 
@@ -28,6 +29,9 @@ type Harness struct {
 	kvServiceAddrs []string
 
 	t *testing.T
+
+	ctx       context.Context
+	ctxCancel func()
 }
 
 func NewHarness(t *testing.T, n int) *Harness {
@@ -66,11 +70,15 @@ func NewHarness(t *testing.T, n int) *Harness {
 		kvServiceAddrs[i] = fmt.Sprintf("localhost:%d", port)
 	}
 
+	ctx, ctxCancel := context.WithCancel(context.Background())
+
 	h := &Harness{
 		n:              n,
 		kvCluster:      kvss,
 		kvServiceAddrs: kvServiceAddrs,
 		t:              t,
+		ctx:            ctx,
+		ctxCancel:      ctxCancel,
 	}
 	return h
 }
@@ -80,11 +88,19 @@ func (h *Harness) Shutdown() {
 		h.kvCluster[i].DisconnectFromRaftPeers()
 	}
 
+	// These help the HTTP server in KVService shut down properly.
+	http.DefaultClient.CloseIdleConnections()
+	h.ctxCancel()
+
 	for i := range h.n {
 		if err := h.kvCluster[i].Shutdown(); err != nil {
 			h.t.Errorf("error while shutting down service %d: %v", i, err)
 		}
 	}
+}
+
+func (h *Harness) NewClient() *kvclient.KVClient {
+	return kvclient.New(h.kvServiceAddrs)
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.
@@ -116,7 +132,7 @@ func (h *Harness) CheckSingleLeader() int {
 // CheckPut sends a Put request through client c, and checks there are no
 // errors. Returns (prevValue, keyFound).
 func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, bool) {
-	pv, f, err := c.Put(context.Background(), key, value)
+	pv, f, err := c.Put(h.ctx, key, value)
 	if err != nil {
 		h.t.Error(err)
 	}
@@ -126,7 +142,7 @@ func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, boo
 // CheckGetFound sends a Get request through client c, and checks there are
 // no errors; it also checks that the key was found, and returns its value.
 func (h *Harness) CheckGetFound(c *kvclient.KVClient, key string) string {
-	gv, f, err := c.Get(context.Background(), key)
+	gv, f, err := c.Get(h.ctx, key)
 	if err != nil {
 		h.t.Error(err)
 	}

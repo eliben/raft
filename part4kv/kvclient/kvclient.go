@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/eliben/raft/part4kv/api"
 )
 
+// DebugClient enables debug output
 const DebugClient = 1
+
+// clientCount is used internally for debugging
+var clientCount atomic.Int32
 
 type KVClient struct {
 	addrs []string
@@ -20,6 +25,8 @@ type KVClient struct {
 	// current leader. It is zero-initialized by default, without loss of
 	// generality.
 	assumedLeader int
+
+	clientID int32
 }
 
 // New creates a new KVClient. serviceAddrs is the addresses (each a string
@@ -29,6 +36,7 @@ func New(serviceAddrs []string) *KVClient {
 	return &KVClient{
 		addrs:         serviceAddrs,
 		assumedLeader: 0,
+		clientID:      clientCount.Add(1),
 	}
 }
 
@@ -84,7 +92,8 @@ func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Res
 // clientlog logs a debugging message if DebugClient > 0
 func (c *KVClient) clientlog(format string, args ...any) {
 	if DebugClient > 0 {
-		format = "[client] " + format
+		clientName := fmt.Sprintf("[client%03d]", c.clientID)
+		format = clientName + " " + format
 		log.Printf(format, args...)
 	}
 }

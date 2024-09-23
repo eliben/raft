@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/eliben/raft/part4kv/kvclient"
 )
 
 func sleepMs(n int) {
@@ -24,7 +22,7 @@ func TestBasicPutGetSingleClient(t *testing.T) {
 	defer h.Shutdown()
 	h.CheckSingleLeader()
 
-	c1 := kvclient.New(h.kvServiceAddrs)
+	c1 := h.NewClient()
 	h.CheckPut(c1, "llave", "cosa")
 
 	if v := h.CheckGetFound(c1, "llave"); v != "cosa" {
@@ -38,7 +36,7 @@ func TestPutPrevValue(t *testing.T) {
 	defer h.Shutdown()
 	h.CheckSingleLeader()
 
-	c1 := kvclient.New(h.kvServiceAddrs)
+	c1 := h.NewClient()
 	// Make sure we get the expected found/prev values before and after Put
 	prev, found := h.CheckPut(c1, "llave", "cosa")
 	if found || prev != "" {
@@ -62,28 +60,43 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 	defer h.Shutdown()
 	h.CheckSingleLeader()
 
-	c1 := kvclient.New(h.kvServiceAddrs)
+	c1 := h.NewClient()
 	h.CheckPut(c1, "k", "v")
 
-	c2 := kvclient.New(h.kvServiceAddrs)
+	c2 := h.NewClient()
 	if v := h.CheckGetFound(c2, "k"); v != "v" {
 		t.Errorf(`got %v, want "v"`, v)
 	}
 	sleepMs(80)
 }
 
-func TestParallelClientsPuts(t *testing.T) {
+func TestParallelClientsPutsAndGets(t *testing.T) {
+	// Test that we can submit multiple PUT and GET requests in parallel
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	h.CheckSingleLeader()
 
-	for i := range 10 {
+	n := 9
+	for i := range n {
 		go func() {
-			c := kvclient.New(h.kvServiceAddrs)
-			h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+			c := h.NewClient()
+			_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+			if f {
+				t.Errorf("got key found for %d, want false", i)
+			}
 		}()
 	}
 	sleepMs(150)
 
-	// TODO: add some gets here to verify
+	for i := range n {
+		go func() {
+			c := h.NewClient()
+			v := h.CheckGetFound(c, fmt.Sprintf("key%v", i))
+			wantV := fmt.Sprintf("value%v", i)
+			if v != wantV {
+				t.Errorf("got v=%v, want %v", v, wantV)
+			}
+		}()
+	}
+	sleepMs(150)
 }
