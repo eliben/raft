@@ -622,10 +622,14 @@ func (cm *ConsensusModule) leaderSendAEs() {
 			var reply AppendEntriesReply
 			if err := cm.server.Call(peerId, "ConsensusModule.AppendEntries", args, &reply); err == nil {
 				cm.mu.Lock()
-				defer cm.mu.Unlock()
+				// Unfortunately, we cannot just defer mu.Unlock() here, because one
+				// of the conditional paths needs to send on some channels. So we have
+				// to carefully place mu.Unlock() on all exit paths from this point
+				// on.
 				if reply.Term > cm.currentTerm {
 					cm.dlog("term out of date in heartbeat reply")
 					cm.becomeFollower(reply.Term)
+					cm.mu.Unlock()
 					return
 				}
 
@@ -654,8 +658,11 @@ func (cm *ConsensusModule) leaderSendAEs() {
 							// Commit index changed: the leader considers new entries to be
 							// committed. Send new entries on the commit channel to this
 							// leader's clients, and notify followers by sending them AEs.
+							cm.mu.Unlock()
 							cm.newCommitReadyChan <- struct{}{}
 							cm.triggerAEChan <- struct{}{}
+						} else {
+							cm.mu.Unlock()
 						}
 					} else {
 						if reply.ConflictTerm >= 0 {
@@ -675,7 +682,10 @@ func (cm *ConsensusModule) leaderSendAEs() {
 							cm.nextIndex[peerId] = reply.ConflictIndex
 						}
 						cm.dlog("AppendEntries reply from %d !success: nextIndex := %d", peerId, ni-1)
+						cm.mu.Unlock()
 					}
+				} else {
+					cm.mu.Unlock()
 				}
 			}
 		}(peerId)
