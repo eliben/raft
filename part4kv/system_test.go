@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/fortytw2/leaktest"
 )
 
 func sleepMs(n int) {
@@ -66,6 +68,8 @@ func TestPutPrevValue(t *testing.T) {
 }
 
 func TestBasicPutGetDifferentClients(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	h.CheckSingleLeader()
@@ -79,6 +83,8 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 }
 
 func TestParallelClientsPutsAndGets(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	// Test that we can submit multiple PUT and GET requests in parallel
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
@@ -109,6 +115,8 @@ func TestParallelClientsPutsAndGets(t *testing.T) {
 // results are received after reconnection (try to bring back the same leader)
 
 func TestDisconnectLeaderAfterPuts(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	lid := h.CheckSingleLeader()
@@ -136,6 +144,13 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 	for i := range n {
 		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 	}
+
+	// At the end of the test, reconnect the peers to avoid a goroutine leak.
+	// In real scenarios, we expect that services will eventually be reconnected,
+	// and if not - a single goroutine leaked is not an issue since the server
+	// will end up being killed anyway.
+	h.ReconnectServiceToPeers(lid)
+	sleepMs(200)
 }
 
 func TestDisconnectLeaderAndFollower(t *testing.T) {
@@ -174,4 +189,8 @@ func TestDisconnectLeaderAndFollower(t *testing.T) {
 	for i := range n {
 		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 	}
+
+	h.ReconnectServiceToPeers(lid)
+	h.CheckSingleLeader()
+	sleepMs(400)
 }
