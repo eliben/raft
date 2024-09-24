@@ -111,6 +111,35 @@ func TestParallelClientsPutsAndGets(t *testing.T) {
 	sleepMs(150)
 }
 
+func Test5ServerParallelClientsPutsAndGets(t *testing.T) {
+	// Similar to the previous test, but this one has a 5-server Raft cluster.
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 5)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+
+	n := 9
+	for i := range n {
+		go func() {
+			c := h.NewClient()
+			_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+			if f {
+				t.Errorf("got key found for %d, want false", i)
+			}
+		}()
+	}
+	sleepMs(150)
+
+	for i := range n {
+		go func() {
+			c := h.NewClient()
+			h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		}()
+	}
+	sleepMs(150)
+}
+
 func TestDisconnectLeaderAfterPuts(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 

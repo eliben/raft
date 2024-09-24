@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eliben/raft/part3/raft"
 	"github.com/eliben/raft/part4kv/kvclient"
 	"github.com/eliben/raft/part4kv/kvservice"
 )
@@ -29,6 +30,8 @@ type Harness struct {
 	// kvServiceAddrs is a list of HTTP addresses (localhost:<PORT>) the KV
 	// services are accepting client commands on.
 	kvServiceAddrs []string
+
+	storage []*raft.MapStorage
 
 	t *testing.T
 
@@ -53,6 +56,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 	ready := make(chan any)
 	connected := make([]bool, n)
 	alive := make([]bool, n)
+	storage := make([]*raft.MapStorage, n)
 
 	// Create all KVService instances in this cluster.
 	for i := range n {
@@ -63,7 +67,8 @@ func NewHarness(t *testing.T, n int) *Harness {
 			}
 		}
 
-		kvss[i] = kvservice.New(i, peerIds, ready)
+		storage[i] = raft.NewMapStorage()
+		kvss[i] = kvservice.New(i, peerIds, storage[i], ready)
 		alive[i] = true
 	}
 
@@ -97,6 +102,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		t:              t,
 		connected:      connected,
 		alive:          alive,
+		storage:        storage,
 		ctx:            ctx,
 		ctxCancel:      ctxCancel,
 	}
@@ -143,8 +149,7 @@ func (h *Harness) CrashService(id int) {
 }
 
 // RestartService "restarts" a service by creating a new instance and
-// connecting it to peers. It will have to be caught up by the leader after
-// it joins the cluster.
+// connecting it to peers.
 func (h *Harness) RestartService(id int) {
 	if h.alive[id] {
 		log.Fatalf("id=%d is alive in RestartService", id)
@@ -158,7 +163,7 @@ func (h *Harness) RestartService(id int) {
 		}
 	}
 	ready := make(chan any)
-	h.kvCluster[id] = kvservice.New(id, peerIds, ready)
+	h.kvCluster[id] = kvservice.New(id, peerIds, h.storage[id], ready)
 	h.kvCluster[id].ServeHTTP(14200 + id)
 
 	h.ReconnectServiceToPeers(id)

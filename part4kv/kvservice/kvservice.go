@@ -33,15 +33,17 @@ type KVService struct {
 //
 //   - id: this service's ID within its Raft cluster
 //   - peerIds: the IDs of the other Raft peers in the cluster
+//   - storage: a raft.Storage implementation the service can use for
+//     durable storage to persist its state.
 //   - readyChan: notification channel that has to be closed when the Raft
 //     cluster is ready (all peers are up and connected to each other).
-func New(id int, peerIds []int, readyChan <-chan any) *KVService {
+func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVService {
 	gob.Register(Command{})
 	commitChan := make(chan raft.CommitEntry)
 
 	// raft.Server handles the Raft RPCs in the cluster; after Serve is called,
 	// it's ready to accept RPC connections from peers.
-	rs := raft.NewServer(id, peerIds, raft.NewMapStorage(), readyChan, commitChan)
+	rs := raft.NewServer(id, peerIds, storage, readyChan, commitChan)
 	rs.Serve()
 	kvs := &KVService{
 		id:         id,
