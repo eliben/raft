@@ -129,13 +129,14 @@ func (kvs *KVService) Shutdown() error {
 
 func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	gr := &api.GetRequest{}
-	err := readRequestJSON(req, gr)
-	if err != nil {
+	if err := readRequestJSON(req, gr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	kvs.kvlog("HTTP GET %v", gr)
 
+	// Submit a command into the Raft server; this is the state change in the
+	// replicated state machine built on top of the Raft log.
 	cmd := Command{
 		Kind: CommandGet,
 		Key:  gr.Key,
@@ -151,27 +152,36 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	// Subsribe for a commit update for our log index. Then wait for it to
 	// be delivered.
 	sub := kvs.createCommitSubsciption(logIndex)
-	entry := <-sub
 
-	// If this is our command, all is good! If it's some other server's command,
-	// this means we lost leadership at some point and should return an error
-	// to the client.
-	entryCmd := entry.Command.(Command)
-	if entryCmd.Id == kvs.id {
-		renderJSON(w, api.GetResponse{
-			RespStatus: api.StatusOK,
-			KeyFound:   entryCmd.ResultFound,
-			Value:      entryCmd.ResultValue,
-		})
-	} else {
-		renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
+	// Wait on the sub channel: the updater will deliver a value when the Raft
+	// log has a commit at logIndex. To ensure clean shutdown of the service,
+	// also select on the request context - if the request is canceled, this
+	// handler aborts without sending data back to the client.
+	select {
+	case entry := <-sub:
+		// If this is our command, all is good! If it's some other server's command,
+		// this means we lost leadership at some point and should return an error
+		// to the client.
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			renderJSON(w, api.GetResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				Value:      entryCmd.ResultValue,
+			})
+		} else {
+			renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
+		}
+	case <-req.Context().Done():
+		return
 	}
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
+	// The details of this handler are very similar to handleGet: refer to that
+	// function for detailed comments.
 	pr := &api.PutRequest{}
-	err := readRequestJSON(req, pr)
-	if err != nil {
+	if err := readRequestJSON(req, pr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -184,29 +194,27 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		Id:    kvs.id,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// Subsribe for a commit update for our log index. Then wait for it to
-	// be delivered.
 	sub := kvs.createCommitSubsciption(logIndex)
-	entry := <-sub
 
-	// If this is our command, all is good! If it's some other server's command,
-	// this means we lost leadership at some point and should return an error
-	// to the client.
-	entryCmd := entry.Command.(Command)
-	if entryCmd.Id == kvs.id {
-		renderJSON(w, api.PutResponse{
-			RespStatus: api.StatusOK,
-			KeyFound:   entryCmd.ResultFound,
-			PrevValue:  entryCmd.ResultValue,
-		})
-	} else {
-		renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
+	select {
+	case entry := <-sub:
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			renderJSON(w, api.PutResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				PrevValue:  entryCmd.ResultValue,
+			})
+		} else {
+			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
+		}
+	case <-req.Context().Done():
+		return
 	}
 }
 

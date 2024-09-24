@@ -154,8 +154,6 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 }
 
 func TestDisconnectLeaderAndFollower(t *testing.T) {
-	// TODO: try to make leaktest pass here - need better shutdown of service
-	// goroutines.
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
 	h := NewHarness(t, 3)
