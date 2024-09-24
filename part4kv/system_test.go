@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -16,7 +17,16 @@ func TestSetupHarness(t *testing.T) {
 	sleepMs(80)
 }
 
-// TODO: requests before consensus reached?
+func TestClientRequestBeforeConsensus(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	sleepMs(10)
+
+	// The client will keep cycling between the services until a leader is found.
+	c1 := h.NewClient()
+	h.CheckPut(c1, "llave", "cosa")
+	sleepMs(80)
+}
 
 func TestBasicPutGetSingleClient(t *testing.T) {
 	// Basic smoke test: send one Put, followed by one Get from a single client.
@@ -128,4 +138,40 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 	}
 }
 
-// TODO test client remembering old leader, adjusting to new leader
+func TestDisconnectLeaderAndFollower(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit some PUT commands.
+	n := 4
+	for i := range n {
+		c := h.NewClient()
+		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		if f {
+			t.Errorf("got key found for %d, want false", i)
+		}
+	}
+
+	// Disconnect leader and one other server; the cluster loses consensus
+	// and client requests should now time out.
+	h.DisconnectServiceFromPeers(lid)
+	otherId := (lid + 1) % 3
+	h.DisconnectServiceFromPeers(otherId)
+	sleepMs(100)
+
+	c := h.NewClient()
+	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	_, _, err := c.Get(ctx, "key0")
+	if err == nil {
+		t.Errorf("want error when no leader, got nil")
+	}
+
+	// Reconnect one server, but not the old leader. We should still get all
+	// the right data back.
+	h.ReconnectServiceToPeers(otherId)
+	h.CheckSingleLeader()
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+}

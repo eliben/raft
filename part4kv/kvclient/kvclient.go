@@ -70,7 +70,7 @@ func (c *KVClient) Get(ctx context.Context, key string) (string, bool, error) {
 func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Response) error {
 FindLeader:
 	for {
-		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)
 		c.clientlog("sending %v to %v", req, path)
 		if err := sendJSONRequest(retryCtx, path, req, resp); err != nil {

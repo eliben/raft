@@ -117,7 +117,7 @@ func (kvs *KVService) Shutdown() error {
 
 	if kvs.srv != nil {
 		kvs.kvlog("shutting down HTTP server")
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
 		kvs.srv.Shutdown(ctx)
 		kvs.kvlog("HTTP shutdown complete")
