@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"testing"
 	"time"
@@ -157,6 +158,8 @@ func (h *Harness) RestartService(id int) {
 	}
 	ready := make(chan any)
 	h.kvCluster[id] = kvservice.New(id, peerIds, ready)
+	h.kvCluster[id].ServeHTTP(14200 + id)
+
 	h.ReconnectServiceToPeers(id)
 	close(ready)
 	h.alive[id] = true
@@ -192,6 +195,21 @@ func (h *Harness) NewClient() *kvclient.KVClient {
 			addrs = append(addrs, h.kvServiceAddrs[i])
 		}
 	}
+	return kvclient.New(addrs)
+}
+
+// NewClientWithRandomAddrsOrder creates a new client that will contact all
+// the existing live services, but in a randomized order.
+func (h *Harness) NewClientWithRandomAddrsOrder() *kvclient.KVClient {
+	var addrs []string
+	for i := range h.n {
+		if h.alive[i] {
+			addrs = append(addrs, h.kvServiceAddrs[i])
+		}
+	}
+	rand.Shuffle(len(addrs), func(i, j int) {
+		addrs[i], addrs[j] = addrs[j], addrs[i]
+	})
 	return kvclient.New(addrs)
 }
 

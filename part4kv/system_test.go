@@ -234,5 +234,70 @@ func TestCrashFollower(t *testing.T) {
 	}
 }
 
-// TODO: crash testing...
-// TODO: helper to create client w/ just peer i
+func TestCrashLeader(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit some PUT commands.
+	n := 3
+	for i := range n {
+		c := h.NewClient()
+		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		if f {
+			t.Errorf("got key found for %d, want false", i)
+		}
+	}
+
+	// Crash a leader and wait for the cluster to establish a new leader.
+	h.CrashService(lid)
+	h.CheckSingleLeader()
+
+	// Talking to the remaining live servers should get the right data.
+	for i := range n {
+		c := h.NewClient()
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+}
+
+func TestCrashThenRestartLeader(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit some PUT commands.
+	n := 3
+	for i := range n {
+		c := h.NewClient()
+		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		if f {
+			t.Errorf("got key found for %d, want false", i)
+		}
+	}
+
+	// Crash a leader and wait for the cluster to establish a new leader.
+	h.CrashService(lid)
+	h.CheckSingleLeader()
+
+	// Talking to the remaining live servers should get the right data.
+	for i := range n {
+		c := h.NewClient()
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	// Now restart the old leader: it will join the cluster and get all the
+	// data.
+	h.RestartService(lid)
+
+	// Get data from services in different orders.
+	for range 5 {
+		c := h.NewClientWithRandomAddrsOrder()
+		for j := range n {
+			h.CheckGet(c, fmt.Sprintf("key%v", j), fmt.Sprintf("value%v", j))
+		}
+	}
+}
