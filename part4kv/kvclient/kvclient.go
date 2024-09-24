@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/eliben/raft/part4kv/api"
 )
@@ -67,10 +68,23 @@ func (c *KVClient) Get(ctx context.Context, key string) (string, bool, error) {
 }
 
 func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Response) error {
+FindLeader:
 	for {
+		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 100*time.Millisecond)
 		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)
 		c.clientlog("sending %v to %v", req, path)
-		if err := sendJSONRequest(ctx, path, req, resp); err != nil {
+		if err := sendJSONRequest(retryCtx, path, req, resp); err != nil {
+			if contextDone(ctx) {
+				c.clientlog("parent context done; bailing out")
+				retryCtxCancel()
+				return err
+			} else if contextDeadlineExceeded(retryCtx) {
+				c.clientlog("timed out: will try next address")
+				c.assumedLeader = (c.assumedLeader + 1) % len(c.addrs)
+				retryCtxCancel()
+				continue FindLeader
+			}
+			retryCtxCancel()
 			return err
 		}
 		c.clientlog("received response %v", resp)
@@ -79,9 +93,13 @@ func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Res
 		case api.StatusNotLeader:
 			c.clientlog("not leader: will try next address")
 			c.assumedLeader = (c.assumedLeader + 1) % len(c.addrs)
+			retryCtxCancel()
+			continue FindLeader
 		case api.StatusOK:
+			retryCtxCancel()
 			return nil
 		case api.StatusFailedCommit:
+			retryCtxCancel()
 			return fmt.Errorf("commit failed; please retry")
 		default:
 			panic("unreachable")
@@ -113,7 +131,7 @@ func sendJSONRequest(ctx context.Context, path string, reqData any, respData any
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("issuing HTTP request: %w", err)
+		return err
 	}
 
 	dec := json.NewDecoder(resp.Body)
@@ -121,4 +139,27 @@ func sendJSONRequest(ctx context.Context, path string, reqData any, respData any
 		return fmt.Errorf("JSON-decoding response data: %w", err)
 	}
 	return nil
+}
+
+// contextDone checks whether ctx is done for any reason. It doesn't block.
+func contextDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+	}
+	return false
+}
+
+// contextDeadlineExceeded checks whether ctx is done because of an exceeded
+// deadline. It doesn't block.
+func contextDeadlineExceeded(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			return true
+		}
+	default:
+	}
+	return false
 }

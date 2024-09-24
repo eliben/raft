@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/eliben/raft/part3/raft"
 	"github.com/eliben/raft/part4kv/api"
@@ -58,8 +59,14 @@ func (kvs *KVService) ConnectToRaftPeer(peerId int, addr net.Addr) error {
 	return kvs.rs.ConnectToPeer(peerId, addr)
 }
 
-func (kvs *KVService) DisconnectFromRaftPeers() {
+func (kvs *KVService) DisconnectFromAllRaftPeers() {
 	kvs.rs.DisconnectAll()
+}
+
+// DisconnectPeer disconnects this service from the Raft peer identified by
+// peerId.
+func (kvs *KVService) DisconnectFromRaftPeer(peerId int) error {
+	return kvs.rs.DisconnectPeer(peerId)
 }
 
 func (kvs *KVService) GetRaftListenAddr() net.Addr {
@@ -110,9 +117,11 @@ func (kvs *KVService) Shutdown() error {
 
 	if kvs.srv != nil {
 		kvs.kvlog("shutting down HTTP server")
-		err := kvs.srv.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		kvs.srv.Shutdown(ctx)
 		kvs.kvlog("HTTP shutdown complete")
-		return err
+		return nil
 	}
 
 	return nil

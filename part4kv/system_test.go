@@ -16,6 +16,8 @@ func TestSetupHarness(t *testing.T) {
 	sleepMs(80)
 }
 
+// TODO: requests before consensus reached?
+
 func TestBasicPutGetSingleClient(t *testing.T) {
 	// Basic smoke test: send one Put, followed by one Get from a single client.
 	h := NewHarness(t, 3)
@@ -25,9 +27,7 @@ func TestBasicPutGetSingleClient(t *testing.T) {
 	c1 := h.NewClient()
 	h.CheckPut(c1, "llave", "cosa")
 
-	if v := h.CheckGetFound(c1, "llave"); v != "cosa" {
-		t.Errorf("got %v, want cosa", v)
-	}
+	h.CheckGet(c1, "llave", "cosa")
 	sleepMs(80)
 }
 
@@ -64,9 +64,7 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 	h.CheckPut(c1, "k", "v")
 
 	c2 := h.NewClient()
-	if v := h.CheckGetFound(c2, "k"); v != "v" {
-		t.Errorf(`got %v, want "v"`, v)
-	}
+	h.CheckGet(c2, "k", "v")
 	sleepMs(80)
 }
 
@@ -91,12 +89,43 @@ func TestParallelClientsPutsAndGets(t *testing.T) {
 	for i := range n {
 		go func() {
 			c := h.NewClient()
-			v := h.CheckGetFound(c, fmt.Sprintf("key%v", i))
-			wantV := fmt.Sprintf("value%v", i)
-			if v != wantV {
-				t.Errorf("got v=%v, want %v", v, wantV)
-			}
+			h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 		}()
 	}
 	sleepMs(150)
 }
+
+// TODO: disconnect leader, see we can still PUT, etc... see that no stale
+// results are received after reconnection (try to bring back the same leader)
+
+func TestDisconnectLeaderAfterPuts(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit some PUT commands.
+	n := 4
+	for i := range n {
+		c := h.NewClient()
+		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		if f {
+			t.Errorf("got key found for %d, want false", i)
+		}
+	}
+
+	h.DisconnectServiceFromPeers(lid)
+	sleepMs(300)
+	newlid := h.CheckSingleLeader()
+
+	if newlid == lid {
+		t.Errorf("got the same leader")
+	}
+
+	// GET commands expecting to get the right values
+	c := h.NewClient()
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+}
+
+// TODO test client remembering old leader, adjusting to new leader

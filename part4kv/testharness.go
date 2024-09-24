@@ -30,6 +30,13 @@ type Harness struct {
 
 	t *testing.T
 
+	// connected has a bool per server in cluster, specifying whether this server
+	// is currently connected to peers (if false, it's partitioned and no messages
+	// will pass to or from it).
+	connected []bool
+
+	// ctx is context used for the HTTP client commands used by tests.
+	// ctxCancel is its cancellation function.
 	ctx       context.Context
 	ctxCancel func()
 }
@@ -37,6 +44,7 @@ type Harness struct {
 func NewHarness(t *testing.T, n int) *Harness {
 	kvss := make([]*kvservice.KVService, n)
 	ready := make(chan any)
+	connected := make([]bool, n)
 
 	// Create all KVService instances in this cluster.
 	for i := range n {
@@ -58,6 +66,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 				kvss[i].ConnectToRaftPeer(j, kvss[j].GetRaftListenAddr())
 			}
 		}
+		connected[i] = true
 	}
 	close(ready)
 
@@ -77,15 +86,44 @@ func NewHarness(t *testing.T, n int) *Harness {
 		kvCluster:      kvss,
 		kvServiceAddrs: kvServiceAddrs,
 		t:              t,
+		connected:      connected,
 		ctx:            ctx,
 		ctxCancel:      ctxCancel,
 	}
 	return h
 }
 
+func (h *Harness) DisconnectServiceFromPeers(id int) {
+	tlog("Disconnect %d", id)
+	h.kvCluster[id].DisconnectFromAllRaftPeers()
+	for j := 0; j < h.n; j++ {
+		if j != id {
+			h.kvCluster[j].DisconnectFromRaftPeer(id)
+		}
+	}
+	h.connected[id] = false
+}
+
+func (h *Harness) ReconnectServiceToPeers(id int) {
+	tlog("Reconnect %d", id)
+	for j := 0; j < h.n; j++ {
+		if j != id {
+			if err := h.kvCluster[id].ConnectToRaftPeer(j, h.kvCluster[j].GetRaftListenAddr()); err != nil {
+				h.t.Fatal(err)
+			}
+			if err := h.kvCluster[j].ConnectToRaftPeer(id, h.kvCluster[id].GetRaftListenAddr()); err != nil {
+				h.t.Fatal(err)
+			}
+		}
+	}
+	h.connected[id] = true
+
+}
+
 func (h *Harness) Shutdown() {
 	for i := range h.n {
-		h.kvCluster[i].DisconnectFromRaftPeers()
+		h.kvCluster[i].DisconnectFromAllRaftPeers()
+		h.connected[i] = false
 	}
 
 	// These help the HTTP server in KVService shut down properly.
@@ -111,7 +149,7 @@ func (h *Harness) CheckSingleLeader() int {
 	for r := 0; r < 8; r++ {
 		leaderId := -1
 		for i := range h.n {
-			if h.kvCluster[i].IsLeader() {
+			if h.connected[i] && h.kvCluster[i].IsLeader() {
 				if leaderId < 0 {
 					leaderId = i
 				} else {
@@ -132,22 +170,34 @@ func (h *Harness) CheckSingleLeader() int {
 // CheckPut sends a Put request through client c, and checks there are no
 // errors. Returns (prevValue, keyFound).
 func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, bool) {
-	pv, f, err := c.Put(h.ctx, key, value)
+	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	//defer cancel()
+	pv, f, err := c.Put(ctx, key, value)
 	if err != nil {
 		h.t.Error(err)
 	}
 	return pv, f
 }
 
-// CheckGetFound sends a Get request through client c, and checks there are
-// no errors; it also checks that the key was found, and returns its value.
-func (h *Harness) CheckGetFound(c *kvclient.KVClient, key string) string {
-	gv, f, err := c.Get(h.ctx, key)
+// CheckGet sends a Get request through client c, and checks there are
+// no errors; it also checks that the key was found, and has the expected
+// value.
+func (h *Harness) CheckGet(c *kvclient.KVClient, key string, wantValue string) {
+	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	//defer cancel()
+	gv, f, err := c.Get(ctx, key)
 	if err != nil {
 		h.t.Error(err)
 	}
 	if !f {
 		h.t.Errorf("got found=false, want true for key=%s", key)
 	}
-	return gv
+	if gv != wantValue {
+		h.t.Errorf("got value=%v, want %v", gv, wantValue)
+	}
+}
+
+func tlog(format string, a ...interface{}) {
+	format = "[TEST] " + format
+	log.Printf(format, a...)
 }
