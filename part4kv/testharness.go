@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -274,6 +275,18 @@ func (h *Harness) CheckGet(c *kvclient.KVClient, key string, wantValue string) {
 	}
 	if gv != wantValue {
 		h.t.Errorf("got value=%v, want %v", gv, wantValue)
+	}
+}
+
+// CheckGetTimesOut checks that a Get request with the given client will
+// time out if we set up a context with a deadline, because the client is
+// unable to get the service to commit its command.
+func (h *Harness) CheckGetTimesOut(c *kvclient.KVClient, key string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, _, err := c.Get(ctx, key)
+	if err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		h.t.Errorf("got err %v; want 'deadline exceeded'", err)
 	}
 }
 

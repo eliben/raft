@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -85,7 +84,8 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 func TestParallelClientsPutsAndGets(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
-	// Test that we can submit multiple PUT and GET requests in parallel
+	// Test that we can submit multiple PUT and GET requests concurrently, with
+	// one goroutine per request launching at the same time.
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	h.CheckSingleLeader()
@@ -122,10 +122,7 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 	n := 4
 	for i := range n {
 		c := h.NewClient()
-		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
-		if f {
-			t.Errorf("got key found for %d, want false", i)
-		}
+		h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 	}
 
 	h.DisconnectServiceFromPeers(lid)
@@ -136,10 +133,16 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 		t.Errorf("got the same leader")
 	}
 
+	// Trying to contact the disconnected leader will time out.
+	c := h.NewClientSingleService(lid)
+	h.CheckGetTimesOut(c, "key1")
+
 	// GET commands expecting to get the right values
-	c := h.NewClient()
-	for i := range n {
-		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	for range 5 {
+		c := h.NewClientWithRandomAddrsOrder()
+		for j := range n {
+			h.CheckGet(c, fmt.Sprintf("key%v", j), fmt.Sprintf("value%v", j))
+		}
 	}
 
 	// At the end of the test, reconnect the peers to avoid a goroutine leak.
@@ -151,6 +154,10 @@ func TestDisconnectLeaderAfterPuts(t *testing.T) {
 }
 
 func TestDisconnectLeaderAndFollower(t *testing.T) {
+	// TODO: try to make leaktest pass here - need better shutdown of service
+	// goroutines.
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	lid := h.CheckSingleLeader()
@@ -173,12 +180,7 @@ func TestDisconnectLeaderAndFollower(t *testing.T) {
 	sleepMs(100)
 
 	c := h.NewClient()
-	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
-	_, _, err := c.Get(ctx, "key0")
-	if err == nil {
-		t.Errorf("want error when no leader, got nil")
-	}
-	cancel()
+	h.CheckGetTimesOut(c, "key0")
 
 	// Reconnect one server, but not the old leader. We should still get all
 	// the right data back.
@@ -195,9 +197,6 @@ func TestDisconnectLeaderAndFollower(t *testing.T) {
 		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 	}
 	sleepMs(100)
-
-	// TODO: try to make leaktest pass here - need better shutdown of service
-	// goroutines.
 }
 
 func TestCrashFollower(t *testing.T) {
