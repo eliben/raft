@@ -111,9 +111,6 @@ func TestParallelClientsPutsAndGets(t *testing.T) {
 	sleepMs(150)
 }
 
-// TODO: disconnect leader, see we can still PUT, etc... see that no stale
-// results are received after reconnection (try to bring back the same leader)
-
 func TestDisconnectLeaderAfterPuts(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
@@ -176,11 +173,12 @@ func TestDisconnectLeaderAndFollower(t *testing.T) {
 	sleepMs(100)
 
 	c := h.NewClient()
-	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
 	_, _, err := c.Get(ctx, "key0")
 	if err == nil {
 		t.Errorf("want error when no leader, got nil")
 	}
+	cancel()
 
 	// Reconnect one server, but not the old leader. We should still get all
 	// the right data back.
@@ -190,7 +188,51 @@ func TestDisconnectLeaderAndFollower(t *testing.T) {
 		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
 	}
 
+	// Reconnect the old leader. We should still get all the right data back.
 	h.ReconnectServiceToPeers(lid)
 	h.CheckSingleLeader()
-	sleepMs(400)
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+	sleepMs(100)
+
+	// TODO: try to make leaktest pass here - need better shutdown of service
+	// goroutines.
 }
+
+func TestCrashFollower(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit some PUT commands.
+	n := 3
+	for i := range n {
+		c := h.NewClient()
+		_, f := h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+		if f {
+			t.Errorf("got key found for %d, want false", i)
+		}
+	}
+
+	// Crash a non-leader
+	otherId := (lid + 1) % 3
+	h.CrashService(otherId)
+
+	// Talking directly to the leader should still work...
+	for i := range n {
+		c := h.NewClientSingleService(lid)
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	// Talking to the remaining live servers should also work
+	for i := range n {
+		c := h.NewClient()
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+}
+
+// TODO: crash testing...
+// TODO: helper to create client w/ just peer i

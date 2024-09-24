@@ -35,6 +35,11 @@ type Harness struct {
 	// will pass to or from it).
 	connected []bool
 
+	// alive has a bool per server in the cluster, specifying whether this server
+	// is currently alive (false means it has crashed and wasn't restarted yet).
+	// connected implies alive.
+	alive []bool
+
 	// ctx is context used for the HTTP client commands used by tests.
 	// ctxCancel is its cancellation function.
 	ctx       context.Context
@@ -45,6 +50,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 	kvss := make([]*kvservice.KVService, n)
 	ready := make(chan any)
 	connected := make([]bool, n)
+	alive := make([]bool, n)
 
 	// Create all KVService instances in this cluster.
 	for i := range n {
@@ -56,6 +62,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		}
 
 		kvss[i] = kvservice.New(i, peerIds, ready)
+		alive[i] = true
 	}
 
 	// Connect the Raft peers of the services to each other and close the ready
@@ -87,6 +94,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		kvServiceAddrs: kvServiceAddrs,
 		t:              t,
 		connected:      connected,
+		alive:          alive,
 		ctx:            ctx,
 		ctxCancel:      ctxCancel,
 	}
@@ -107,7 +115,7 @@ func (h *Harness) DisconnectServiceFromPeers(id int) {
 func (h *Harness) ReconnectServiceToPeers(id int) {
 	tlog("Reconnect %d", id)
 	for j := 0; j < h.n; j++ {
-		if j != id {
+		if j != id && h.alive[j] {
 			if err := h.kvCluster[id].ConnectToRaftPeer(j, h.kvCluster[j].GetRaftListenAddr()); err != nil {
 				h.t.Fatal(err)
 			}
@@ -118,6 +126,41 @@ func (h *Harness) ReconnectServiceToPeers(id int) {
 	}
 	h.connected[id] = true
 
+}
+
+// CrashService "crashes" a service by disconnecting it from all peers and
+// then asking it to shut down. We're not going to be using the same service
+// instance again.
+func (h *Harness) CrashService(id int) {
+	tlog("Crash %d", id)
+	h.DisconnectServiceFromPeers(id)
+	h.alive[id] = false
+	if err := h.kvCluster[id].Shutdown(); err != nil {
+		h.t.Errorf("error while shutting down service %d: %v", id, err)
+	}
+}
+
+// RestartService "restarts" a service by creating a new instance and
+// connecting it to peers. It will have to be caught up by the leader after
+// it joins the cluster.
+func (h *Harness) RestartService(id int) {
+	if h.alive[id] {
+		log.Fatalf("id=%d is alive in RestartService", id)
+	}
+	tlog("Restart %d", id)
+
+	peerIds := make([]int, 0)
+	for p := range h.n {
+		if p != id {
+			peerIds = append(peerIds, p)
+		}
+	}
+	ready := make(chan any)
+	h.kvCluster[id] = kvservice.New(id, peerIds, ready)
+	h.ReconnectServiceToPeers(id)
+	close(ready)
+	h.alive[id] = true
+	time.Sleep(20 * time.Millisecond)
 }
 
 func (h *Harness) Shutdown() {
@@ -131,14 +174,33 @@ func (h *Harness) Shutdown() {
 	h.ctxCancel()
 
 	for i := range h.n {
-		if err := h.kvCluster[i].Shutdown(); err != nil {
-			h.t.Errorf("error while shutting down service %d: %v", i, err)
+		if h.alive[i] {
+			h.alive[i] = false
+			if err := h.kvCluster[i].Shutdown(); err != nil {
+				h.t.Errorf("error while shutting down service %d: %v", i, err)
+			}
 		}
 	}
 }
 
+// NewClient creates a new client that will contact all the existing live
+// services.
 func (h *Harness) NewClient() *kvclient.KVClient {
-	return kvclient.New(h.kvServiceAddrs)
+	var addrs []string
+	for i := range h.n {
+		if h.alive[i] {
+			addrs = append(addrs, h.kvServiceAddrs[i])
+		}
+	}
+	return kvclient.New(addrs)
+}
+
+// NewClientSingleService creates a new client that will contact only a single
+// service (specified by id). Note that if this isn't the leader, the client
+// may get stuck in retries.
+func (h *Harness) NewClientSingleService(id int) *kvclient.KVClient {
+	addrs := h.kvServiceAddrs[id : id+1]
+	return kvclient.New(addrs)
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.
@@ -170,8 +232,8 @@ func (h *Harness) CheckSingleLeader() int {
 // CheckPut sends a Put request through client c, and checks there are no
 // errors. Returns (prevValue, keyFound).
 func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, bool) {
-	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
-	//defer cancel()
+	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	defer cancel()
 	pv, f, err := c.Put(ctx, key, value)
 	if err != nil {
 		h.t.Error(err)
@@ -183,8 +245,8 @@ func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, boo
 // no errors; it also checks that the key was found, and has the expected
 // value.
 func (h *Harness) CheckGet(c *kvclient.KVClient, key string, wantValue string) {
-	ctx, _ := context.WithTimeout(h.ctx, 500*time.Millisecond)
-	//defer cancel()
+	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	defer cancel()
 	gv, f, err := c.Get(ctx, key)
 	if err != nil {
 		h.t.Error(err)
