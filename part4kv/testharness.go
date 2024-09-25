@@ -283,6 +283,20 @@ func (h *Harness) CheckGet(c *kvclient.KVClient, key string, wantValue string) {
 	}
 }
 
+// CheckGetNotFound sends a Get request through client c, and checks there are
+// no errors, but the key isn't found in the service.
+func (h *Harness) CheckGetNotFound(c *kvclient.KVClient, key string) {
+	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	defer cancel()
+	_, f, err := c.Get(ctx, key)
+	if err != nil {
+		h.t.Error(err)
+	}
+	if f {
+		h.t.Errorf("got found=true, want false for key=%s", key)
+	}
+}
+
 // CheckGetTimesOut checks that a Get request with the given client will
 // time out if we set up a context with a deadline, because the client is
 // unable to get the service to commit its command.

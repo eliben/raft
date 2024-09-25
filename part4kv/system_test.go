@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -326,4 +327,109 @@ func TestCrashThenRestartLeader(t *testing.T) {
 			h.CheckGet(c, fmt.Sprintf("key%v", j), fmt.Sprintf("value%v", j))
 		}
 	}
+}
+
+func TestCrashLeaderBetweenSubmitAndCommit(t *testing.T) {
+	// Crash leader right after it gets a client request, but before it manages
+	// to commit it.
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit a PUT command in a goroutine.
+	go func() {
+		c := h.NewClientSingleService(lid)
+		ctx, cancel := context.WithTimeout(h.ctx, 300*time.Millisecond)
+		_, _, err := c.Put(ctx, "dakey", "davalue")
+		// This command will fail because we're going to crash the server soon.
+		if err == nil {
+			t.Errorf("wanted Put to fail here")
+		}
+		cancel()
+	}()
+
+	// Wait a bit and crash the leader, while it's trying to commit that PUT.
+	sleepMs(2)
+	h.CrashService(lid)
+
+	// A new leader will be elected; make sure that our PUT didn't make it.
+	h.CheckSingleLeader()
+	c := h.NewClient()
+	h.CheckGetNotFound(c, "dakey")
+
+	// Now PUT some other values in.
+	n := 3
+	for i := range n {
+		h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	// And make sure we can GET them back.
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	// Restart old leader, give it a bit of time to catch up. We should still
+	// be able to read all the keys we added but not dakey.
+	h.RestartService(lid)
+	sleepMs(150)
+
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+	h.CheckGetNotFound(c, "dakey")
+}
+
+// TODO fails: why? the first leader shouldn't have enough time to commit
+// dakey to the followers.
+// TODO also, client send should log out the command type, not just contents
+func TestDisconnectLeaderBetweenSubmitAndCommit(t *testing.T) {
+	// Like TestCrashLeaderBetweenSubmitAndCommit, but the leader is just
+	// disconnected, not crashed.
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	// Submit a PUT command in a goroutine.
+	go func() {
+		c := h.NewClientSingleService(lid)
+		ctx, cancel := context.WithTimeout(h.ctx, 300*time.Millisecond)
+		_, _, err := c.Put(ctx, "dakey", "davalue")
+		// This command will fail because we're going to disconnect the server soon.
+		if err == nil {
+			t.Errorf("wanted Put to fail here")
+		}
+		cancel()
+	}()
+
+	// Wait a bit and disconnect the leader, while it's trying to commit that PUT.
+	sleepMs(2)
+	h.DisconnectServiceFromPeers(lid)
+
+	// A new leader will be elected; make sure that our PUT didn't make it.
+	h.CheckSingleLeader()
+	c := h.NewClient()
+	h.CheckGetNotFound(c, "dakey")
+
+	// Now PUT some other values in.
+	n := 3
+	for i := range n {
+		h.CheckPut(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	// And make sure we can GET them back.
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+
+	h.ReconnectServiceToPeers(lid)
+	sleepMs(150)
+
+	for i := range n {
+		h.CheckGet(c, fmt.Sprintf("key%v", i), fmt.Sprintf("value%v", i))
+	}
+	h.CheckGetNotFound(c, "dakey")
 }
