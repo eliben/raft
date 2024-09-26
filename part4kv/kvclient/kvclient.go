@@ -72,7 +72,7 @@ FindLeader:
 	for {
 		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)
-		c.clientlog("sending %v to %v", req, path)
+		c.clientlog("sending %#v to %v", req, path)
 		if err := sendJSONRequest(retryCtx, path, req, resp); err != nil {
 			if contextDone(ctx) {
 				c.clientlog("parent context done; bailing out")
@@ -87,7 +87,7 @@ FindLeader:
 			retryCtxCancel()
 			return err
 		}
-		c.clientlog("received response %v", resp)
+		c.clientlog("received response %#v", resp)
 
 		switch resp.Status() {
 		case api.StatusNotLeader:
