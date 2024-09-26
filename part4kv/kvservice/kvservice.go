@@ -57,24 +57,6 @@ func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVS
 	return kvs
 }
 
-func (kvs *KVService) ConnectToRaftPeer(peerId int, addr net.Addr) error {
-	return kvs.rs.ConnectToPeer(peerId, addr)
-}
-
-func (kvs *KVService) DisconnectFromAllRaftPeers() {
-	kvs.rs.DisconnectAll()
-}
-
-// DisconnectPeer disconnects this service from the Raft peer identified by
-// peerId.
-func (kvs *KVService) DisconnectFromRaftPeer(peerId int) error {
-	return kvs.rs.DisconnectPeer(peerId)
-}
-
-func (kvs *KVService) GetRaftListenAddr() net.Addr {
-	return kvs.rs.GetListenAddr()
-}
-
 // IsLeader checks if kvs thinks it's the leader in the Raft cluster. Only
 // use this for testin and debugging.
 func (kvs *KVService) IsLeader() bool {
@@ -290,4 +272,20 @@ func (kvs *KVService) kvlog(format string, args ...any) {
 		format = fmt.Sprintf("[kv %d] ", kvs.id) + format
 		log.Printf(format, args...)
 	}
+}
+
+func (kvs *KVService) ConnectToRaftPeer(peerId int, addr net.Addr) error {
+	return kvs.rs.ConnectToPeer(peerId, addr)
+}
+
+func (kvs *KVService) DisconnectFromAllRaftPeers() {
+	kvs.rs.DisconnectAll()
+}
+
+func (kvs *KVService) DisconnectFromRaftPeer(peerId int) error {
+	return kvs.rs.DisconnectPeer(peerId)
+}
+
+func (kvs *KVService) GetRaftListenAddr() net.Addr {
+	return kvs.rs.GetListenAddr()
 }
