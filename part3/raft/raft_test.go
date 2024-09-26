@@ -608,3 +608,35 @@ func TestCrashAfterSubmit(t *testing.T) {
 	h.CheckCommittedN(5, 3)
 	h.CheckCommittedN(6, 3)
 }
+
+func TestDisconnectAfterSubmit(t *testing.T) {
+	// Similar to TestCrashAfterSubmit, but the leader is disconnected - rather
+	// than crashed - shortly after submitting the first command.
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, _ := h.CheckSingleLeader()
+
+	h.SubmitToServer(origLeaderId, 5)
+	sleepMs(1)
+	h.DisconnectPeer(origLeaderId)
+
+	// Make sure 5 is not committed when a new leader is elected. Leaders won't
+	// commit commands from previous terms.
+	sleepMs(10)
+	h.CheckSingleLeader()
+	sleepMs(300)
+	h.CheckNotCommitted(5)
+
+	h.ReconnectPeer(origLeaderId)
+	sleepMs(150)
+	newLeaderId, _ := h.CheckSingleLeader()
+	h.CheckNotCommitted(5)
+
+	// When we submit a new command, it will be submitted, and so will 5, because
+	// it appears in everyone's logs.
+	h.SubmitToServer(newLeaderId, 6)
+	sleepMs(100)
+	h.CheckCommittedN(5, 3)
+	h.CheckCommittedN(6, 3)
+}
