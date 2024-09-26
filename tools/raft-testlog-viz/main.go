@@ -224,7 +224,7 @@ func parseTestLogs(rd io.Reader) []TestLog {
 	var testlogs []TestLog
 
 	statusRE := regexp.MustCompile(`--- (\w+):\s+(\w+)`)
-	entryRE := regexp.MustCompile(`([0-9:.]+) \[(\w+)\] (.*)`)
+	entryRE := regexp.MustCompile(`([0-9:.]+) \[([\w ]+)\] (.*)`)
 
 	scanner := bufio.NewScanner(bufio.NewReader(rd))
 	for scanner.Scan() {
@@ -249,10 +249,24 @@ func parseTestLogs(rd io.Reader) []TestLog {
 
 			entryMatch := entryRE.FindStringSubmatch(line)
 			if len(entryMatch) > 0 {
+				// [kv N] entries get folded into id=N, with the "kv N" part prefixed
+				// to the message.
+				id, foundKV := strings.CutPrefix(entryMatch[2], "kv ")
+				msg := entryMatch[3]
+				if foundKV {
+					msg = id + " " + msg
+				}
+
+				// [clientNNN] entries get folded into id=TEST
+				if strings.HasPrefix(entryMatch[2], "client") {
+					id = "TEST"
+					msg = entryMatch[2] + " " + msg
+				}
+
 				entry := Entry{
 					timestamp: entryMatch[1],
-					id:        entryMatch[2],
-					msg:       entryMatch[3],
+					id:        id,
+					msg:       msg,
 				}
 				curlog.entries = append(curlog.entries, entry)
 				curlog.ids[entry.id] = true
