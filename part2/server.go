@@ -159,12 +159,14 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 	}
 }
 
-// RPCProxy is a trivial pass-thru proxy type for ConsensusModule's RPC methods.
-// It's useful for:
-// - Simulating a small delay in RPC transmission.
-// - Avoiding running into https://github.com/golang/go/issues/19957
-// - Simulating possible unreliable connections by delaying some messages
-//   significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
+// RPCProxy is a pass-thru proxy server for ConsensusModule's RPC methods. It
+// serves RPC requests made to a CM and manipulates them before forwarding to
+// the CM itself.
+//
+// It's useful for things like:
+//   - Simulating a small delay in RPC transmission.
+//   - Simulating possible unreliable connections by delaying some messages
+//     significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
 type RPCProxy struct {
 	cm *ConsensusModule
 }
