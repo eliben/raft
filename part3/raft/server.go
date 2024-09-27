@@ -162,7 +162,7 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 	if peer == nil {
 		return fmt.Errorf("call client %d after it's closed", id)
 	} else {
-		return peer.Call(serviceMethod, args, reply)
+		return s.rpcProxy.Call(peer, serviceMethod, args, reply)
 	}
 }
 
@@ -172,16 +172,26 @@ func (s *Server) IsLeader() bool {
 	return isLeader
 }
 
+// Proxy provides access to the RPC proxy this server is using; this is only
+// for testing purposes to simulate faults.
+func (s *Server) Proxy() *RPCProxy {
+	return s.rpcProxy
+}
+
 // RPCProxy is a pass-thru proxy server for ConsensusModule's RPC methods. It
 // serves RPC requests made to a CM and manipulates them before forwarding to
 // the CM itself.
 //
 // It's useful for things like:
+//   - Simulating dropping of RPC calls
 //   - Simulating a small delay in RPC transmission.
 //   - Simulating possible unreliable connections by delaying some messages
 //     significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
 type RPCProxy struct {
+	mu sync.Mutex
 	cm *ConsensusModule
+
+	numCallsToDrop int
 }
 
 func (rpp *RPCProxy) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
@@ -214,4 +224,24 @@ func (rpp *RPCProxy) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesR
 		time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
 	}
 	return rpp.cm.AppendEntries(args, reply)
+}
+
+func (rpp *RPCProxy) Call(peer *rpc.Client, method string, args interface{}, reply interface{}) error {
+	rpp.mu.Lock()
+	if rpp.numCallsToDrop > 0 {
+		rpp.numCallsToDrop--
+		rpp.mu.Unlock()
+		rpp.cm.dlog("drop Call %s: %v", method, args)
+		return rpc.ServerError("dropped")
+	} else {
+		rpp.mu.Unlock()
+		return peer.Call(method, args, reply)
+	}
+}
+
+// DropNextNCalls instruct the proxy to drop the next few calls
+func (rpp *RPCProxy) DropNextNCalls(n int) {
+	rpp.mu.Lock()
+	defer rpp.mu.Unlock()
+	rpp.numCallsToDrop = n
 }

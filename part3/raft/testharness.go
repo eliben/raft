@@ -186,6 +186,11 @@ func (h *Harness) RestartPeer(id int) {
 	sleepMs(20)
 }
 
+// PeerDropNextNCalls instructs peer `id` to drop the next `n` RPC calls.
+func (h *Harness) PeerDropNextNCalls(id int, n int) {
+	h.cluster[id].Proxy().DropNextNCalls(n)
+}
+
 // CheckSingleLeader checks that only a single server thinks it's the leader.
 // Returns the leader's id and term. It retries several times if no leader is
 // identified yet.
