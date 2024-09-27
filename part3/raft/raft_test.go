@@ -186,19 +186,16 @@ func TestCommitOneCommand(t *testing.T) {
 }
 
 func TestCommitAfterCallDrops(t *testing.T) {
-	// After some calls are dropped, the leader will just send out new AEs after
-	// 50 ms, so shortly after the submit the command won't be committed yet,
-	// but after some additional time - it will.
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 
 	lid, _ := h.CheckSingleLeader()
-	h.PeerDropNextNCalls(lid, 2)
+	h.PeerDropCallsAfterN(lid, 2)
 	h.SubmitToServer(lid, 99)
 	sleepMs(30)
-	h.CheckNotCommitted(99)
+	h.PeerDontDropCalls(lid)
 
 	sleepMs(60)
 	h.CheckCommittedN(99, 3)

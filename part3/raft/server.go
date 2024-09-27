@@ -62,7 +62,7 @@ func (s *Server) Serve() {
 	// Create a new RPC server and register a RPCProxy that forwards all methods
 	// to n.cm
 	s.rpcServer = rpc.NewServer()
-	s.rpcProxy = &RPCProxy{cm: s.cm}
+	s.rpcProxy = NewProxy(s.cm)
 	s.rpcServer.RegisterName("ConsensusModule", s.rpcProxy)
 
 	var err error
@@ -191,7 +191,18 @@ type RPCProxy struct {
 	mu sync.Mutex
 	cm *ConsensusModule
 
-	numCallsToDrop int
+	// numCallsBeforeDrop is used to control dropping RPC calls:
+	//   -1: means we're not dropping any calls
+	//    0: means we're dropping all calls now
+	//   >0: means we'll start dropping calls after this number is made
+	numCallsBeforeDrop int
+}
+
+func NewProxy(cm *ConsensusModule) *RPCProxy {
+	return &RPCProxy{
+		cm:                 cm,
+		numCallsBeforeDrop: -1,
+	}
 }
 
 func (rpp *RPCProxy) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
@@ -228,20 +239,31 @@ func (rpp *RPCProxy) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesR
 
 func (rpp *RPCProxy) Call(peer *rpc.Client, method string, args interface{}, reply interface{}) error {
 	rpp.mu.Lock()
-	if rpp.numCallsToDrop > 0 {
-		rpp.numCallsToDrop--
+	if rpp.numCallsBeforeDrop == 0 {
 		rpp.mu.Unlock()
 		rpp.cm.dlog("drop Call %s: %v", method, args)
-		return rpc.ServerError("dropped")
+		return fmt.Errorf("RPC failed")
 	} else {
+		if rpp.numCallsBeforeDrop > 0 {
+			rpp.numCallsBeforeDrop--
+		}
 		rpp.mu.Unlock()
 		return peer.Call(method, args, reply)
 	}
 }
 
-// DropNextNCalls instruct the proxy to drop the next few calls
-func (rpp *RPCProxy) DropNextNCalls(n int) {
+// DropCallsAfterN instruct the proxy to drop calls after n are made from this
+// point.
+func (rpp *RPCProxy) DropCallsAfterN(n int) {
 	rpp.mu.Lock()
 	defer rpp.mu.Unlock()
-	rpp.numCallsToDrop = n
+
+	rpp.numCallsBeforeDrop = n
+}
+
+func (rpp *RPCProxy) DontDropCalls() {
+	rpp.mu.Lock()
+	defer rpp.mu.Unlock()
+
+	rpp.numCallsBeforeDrop = -1
 }

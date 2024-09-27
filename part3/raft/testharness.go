@@ -186,9 +186,17 @@ func (h *Harness) RestartPeer(id int) {
 	sleepMs(20)
 }
 
-// PeerDropNextNCalls instructs peer `id` to drop the next `n` RPC calls.
-func (h *Harness) PeerDropNextNCalls(id int, n int) {
-	h.cluster[id].Proxy().DropNextNCalls(n)
+// PeerDropCallsAfterN instructs peer `id` to drop calls after the next `n`
+// are made.
+func (h *Harness) PeerDropCallsAfterN(id int, n int) {
+	tlog("peer %d drop calls after %d", id, n)
+	h.cluster[id].Proxy().DropCallsAfterN(n)
+}
+
+// PeerDontDropCalls instructs peer `id` to stop dropping calls.
+func (h *Harness) PeerDontDropCalls(id int) {
+	tlog("peer %d don't drop calls")
+	h.cluster[id].Proxy().DontDropCalls()
 }
 
 // CheckSingleLeader checks that only a single server thinks it's the leader.
@@ -240,6 +248,7 @@ func (h *Harness) CheckNoLeader() {
 // Returns the number of servers that have this command committed, and its
 // log index.
 func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
+	h.t.Helper()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -301,6 +310,7 @@ func (h *Harness) CheckCommitted(cmd int) (nc int, index int) {
 // CheckCommittedN verifies that cmd was committed by exactly n connected
 // servers.
 func (h *Harness) CheckCommittedN(cmd int, n int) {
+	h.t.Helper()
 	nc, _ := h.CheckCommitted(cmd)
 	if nc != n {
 		h.t.Errorf("CheckCommittedN got nc=%d, want %d", nc, n)
@@ -310,6 +320,7 @@ func (h *Harness) CheckCommittedN(cmd int, n int) {
 // CheckNotCommitted verifies that no command equal to cmd has been committed
 // by any of the active servers yet.
 func (h *Harness) CheckNotCommitted(cmd int) {
+	h.t.Helper()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
