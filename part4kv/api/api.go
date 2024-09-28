@@ -38,6 +38,22 @@ func (gr *GetResponse) Status() ResponseStatus {
 	return gr.RespStatus
 }
 
+type CASRequest struct {
+	Key          string
+	CompareValue string
+	Value        string
+}
+
+type CASResponse struct {
+	RespStatus ResponseStatus
+	KeyFound   bool
+	PrevValue  string
+}
+
+func (cr *CASResponse) Status() ResponseStatus {
+	return cr.RespStatus
+}
+
 type ResponseStatus int
 
 const (

@@ -73,6 +73,7 @@ func (kvs *KVService) ServeHTTP(port int) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /get/", kvs.handleGet)
 	mux.HandleFunc("POST /put/", kvs.handlePut)
+	mux.HandleFunc("POST /cas/", kvs.handleCAS)
 
 	kvs.srv = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -202,6 +203,46 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
+	cr := &api.CASRequest{}
+	if err := readRequestJSON(req, cr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	kvs.kvlog("HTTP CAS %v", cr)
+
+	cmd := Command{
+		Kind:         CommandCAS,
+		Key:          cr.Key,
+		Value:        cr.Value,
+		CompareValue: cr.CompareValue,
+		Id:           kvs.id,
+	}
+	logIndex := kvs.rs.Submit(cmd)
+	if logIndex < 0 {
+		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
+		return
+	}
+
+	sub := kvs.createCommitSubsciption(logIndex)
+
+	select {
+	case entry := <-sub:
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			renderJSON(w, api.CASResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				PrevValue:  entryCmd.ResultValue,
+			})
+		} else {
+			renderJSON(w, api.CASResponse{RespStatus: api.StatusFailedCommit})
+		}
+	case <-req.Context().Done():
+		return
+	}
+}
+
 // runUpdater runs the "updater" goroutine that reads the commit channel
 // from Raft and updates the data store; this is the Replicated State Machine
 // part of distributed consensus!
@@ -216,6 +257,8 @@ func (kvs *KVService) runUpdater() {
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.Get(cmd.Key)
 			case CommandPut:
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
+			case CommandCAS:
+				cmd.ResultValue, cmd.ResultFound = kvs.ds.CAS(cmd.Key, cmd.CompareValue, cmd.Value)
 			default:
 				panic(fmt.Errorf("unexpected command %v", cmd))
 			}
@@ -273,6 +316,8 @@ func (kvs *KVService) kvlog(format string, args ...any) {
 		log.Printf(format, args...)
 	}
 }
+
+// The following functions exist for testing purposes, to simulate faults.
 
 func (kvs *KVService) ConnectToRaftPeer(peerId int, addr net.Addr) error {
 	return kvs.rs.ConnectToPeer(peerId, addr)

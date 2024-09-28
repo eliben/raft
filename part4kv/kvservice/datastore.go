@@ -35,3 +35,17 @@ func (ds *DataStore) Put(key, value string) (string, bool) {
 	ds.data[key] = value
 	return v, ok
 }
+
+// CAS performs an atomic compare-and-swap:
+// if key exists and its prev value == compare, write value, else nop
+// The prev value and whether the key existed in the store is returned.
+func (ds *DataStore) CAS(key, compare, value string) (string, bool) {
+	ds.Lock()
+	defer ds.Unlock()
+
+	prevValue, ok := ds.data[key]
+	if ok && prevValue == compare {
+		ds.data[key] = value
+	}
+	return prevValue, ok
+}
