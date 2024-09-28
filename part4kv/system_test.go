@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,7 +82,54 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 	sleepMs(80)
 }
 
-func TestParallelClientsPutsAndGets(t *testing.T) {
+func TestCASBasic(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+	h.CheckPut(c1, "k", "v")
+
+	if pv, found := h.CheckCAS(c1, "k", "v", "newv"); pv != "v" || !found {
+		t.Errorf("got %s,%v, want replacement", pv, found)
+	}
+}
+
+func TestCASConcurrent(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+	c := h.NewClient()
+	h.CheckPut(c, "foo", "mexico")
+
+	var wg sync.WaitGroup
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		c := h.NewClient()
+		for range 20 {
+			h.CheckCAS(c, "foo", "bar", "bomba")
+		}
+	}()
+
+	// Once a client homes in on the right leader, it takes 4-5 ms to roundtrip
+	// a command. For the first 50 ms after launching the CAS goroutines, 'foo'
+	// has the wrong value so the CAS doesn't work, but then it will...
+	sleepMs(50)
+	c2 := h.NewClient()
+	h.CheckPut(c2, "foo", "bar")
+
+	sleepMs(300)
+	h.CheckGet(c2, "foo", "bomba")
+
+	wg.Wait()
+}
+
+func TestConcurrentClientsPutsAndGets(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
 	// Test that we can submit multiple PUT and GET requests concurrently, with
@@ -111,7 +159,7 @@ func TestParallelClientsPutsAndGets(t *testing.T) {
 	sleepMs(150)
 }
 
-func Test5ServerParallelClientsPutsAndGets(t *testing.T) {
+func Test5ServerConcurrentClientsPutsAndGets(t *testing.T) {
 	// Similar to the previous test, but this one has a 5-server Raft cluster.
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 

@@ -67,6 +67,21 @@ func (c *KVClient) Get(ctx context.Context, key string) (string, bool, error) {
 	return getResp.Value, getResp.KeyFound, err
 }
 
+// CAS operation: if prev value of key == compare, assign new value. Returns an
+// error, or (prevValue, keyFound, false), where keyFound specifies whether the
+// key was found in the store prior to this command, and prevValue is its
+// previous value if it was found.
+func (c *KVClient) CAS(ctx context.Context, key string, compare string, value string) (string, bool, error) {
+	casReq := api.CASRequest{
+		Key:          key,
+		CompareValue: compare,
+		Value:        value,
+	}
+	var casResp api.CASResponse
+	err := c.send(ctx, "cas", casReq, &casResp)
+	return casResp.PrevValue, casResp.KeyFound, err
+}
+
 func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Response) error {
 FindLeader:
 	for {
