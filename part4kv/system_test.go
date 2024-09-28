@@ -107,8 +107,8 @@ func TestCASConcurrent(t *testing.T) {
 	h.CheckPut(c, "foo", "mexico")
 
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		c := h.NewClient()
 		for range 20 {

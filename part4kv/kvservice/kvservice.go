@@ -19,13 +19,24 @@ const DebugKV = 1
 type KVService struct {
 	sync.Mutex
 
-	id         int
-	rs         *raft.Server
+	// id is the service ID in a Raft cluster.
+	id int
+
+	// rs is the Raft server that contains a CM
+	rs *raft.Server
+
+	// commitChan is the commit channel passed to the Raft server; when commands
+	// are committed, they're sent on this channel.
 	commitChan chan raft.CommitEntry
+
+	// commitSubs are the commit subscriptions currently active in this service.
+	// See the createCommitSubsciption method for more details.
 	commitSubs map[int]chan raft.CommitEntry
 
+	// ds is the underlying data store implementing the KV DB.
 	ds *DataStore
 
+	// srv is the HTTP server exposed by the service to the external world.
 	srv *http.Server
 }
 
@@ -112,7 +123,60 @@ func (kvs *KVService) Shutdown() error {
 	return nil
 }
 
+func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
+	pr := &api.PutRequest{}
+	if err := readRequestJSON(req, pr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	kvs.kvlog("HTTP PUT %v", pr)
+
+	// Submit a command into the Raft server; this is the state change in the
+	// replicated state machine built on top of the Raft log.
+	cmd := Command{
+		Kind:  CommandPut,
+		Key:   pr.Key,
+		Value: pr.Value,
+		Id:    kvs.id,
+	}
+	logIndex := kvs.rs.Submit(cmd)
+	// If we're not the Raft leader, send an appropriate status
+	if logIndex < 0 {
+		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
+		return
+	}
+
+	// Subsribe for a commit update for our log index. Then wait for it to
+	// be delivered.
+	sub := kvs.createCommitSubsciption(logIndex)
+
+	// Wait on the sub channel: the updater will deliver a value when the Raft
+	// log has a commit at logIndex. To ensure clean shutdown of the service,
+	// also select on the request context - if the request is canceled, this
+	// handler aborts without sending data back to the client.
+	select {
+	case entry := <-sub:
+		// If this is our command, all is good! If it's some other server's command,
+		// this means we lost leadership at some point and should return an error
+		// to the client.
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			renderJSON(w, api.PutResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				PrevValue:  entryCmd.ResultValue,
+			})
+		} else {
+			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
+		}
+	case <-req.Context().Done():
+		return
+	}
+}
+
 func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
+	// The details of this handler are very similar to handleGet: refer to that
+	// function for detailed comments.
 	gr := &api.GetRequest{}
 	if err := readRequestJSON(req, gr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -120,8 +184,6 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	}
 	kvs.kvlog("HTTP GET %v", gr)
 
-	// Submit a command into the Raft server; this is the state change in the
-	// replicated state machine built on top of the Raft log.
 	cmd := Command{
 		Kind: CommandGet,
 		Key:  gr.Key,
@@ -156,47 +218,6 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 			})
 		} else {
 			renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
-		}
-	case <-req.Context().Done():
-		return
-	}
-}
-
-func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
-	// The details of this handler are very similar to handleGet: refer to that
-	// function for detailed comments.
-	pr := &api.PutRequest{}
-	if err := readRequestJSON(req, pr); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	kvs.kvlog("HTTP PUT %v", pr)
-
-	cmd := Command{
-		Kind:  CommandPut,
-		Key:   pr.Key,
-		Value: pr.Value,
-		Id:    kvs.id,
-	}
-	logIndex := kvs.rs.Submit(cmd)
-	if logIndex < 0 {
-		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
-		return
-	}
-
-	sub := kvs.createCommitSubsciption(logIndex)
-
-	select {
-	case entry := <-sub:
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.PutResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
-			})
-		} else {
-			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
 		}
 	case <-req.Context().Done():
 		return
