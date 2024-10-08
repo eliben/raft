@@ -20,7 +20,7 @@ const DebugCM = 1
 // be applied to the client's state machine.
 type CommitEntry struct {
 	// Command is the client command being committed.
-	Command interface{}
+	Command any
 
 	// Index is the log index at which the client command is committed.
 	Index int
@@ -54,7 +54,7 @@ func (s CMState) String() string {
 }
 
 type LogEntry struct {
-	Command interface{}
+	Command any
 	Term    int
 }
 
@@ -102,7 +102,7 @@ type ConsensusModule struct {
 // server. The ready channel signals the CM that all peers are connected and
 // it's safe to start its state machine. commitChan is going to be used by the
 // CM to send log entries that have been committed by the Raft cluster.
-func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan interface{}, commitChan chan<- CommitEntry) *ConsensusModule {
+func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan any, commitChan chan<- CommitEntry) *ConsensusModule {
 	cm := new(ConsensusModule)
 	cm.id = id
 	cm.peerIds = peerIds
@@ -142,7 +142,7 @@ func (cm *ConsensusModule) Report() (id int, term int, isLeader bool) {
 // committed entries. It returns true iff this CM is the leader - in which case
 // the command is accepted. If false is returned, the client will have to find
 // a different CM to submit this command to.
-func (cm *ConsensusModule) Submit(command interface{}) bool {
+func (cm *ConsensusModule) Submit(command any) bool {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -167,7 +167,7 @@ func (cm *ConsensusModule) Stop() {
 }
 
 // dlog logs a debugging message if DebugCM > 0.
-func (cm *ConsensusModule) dlog(format string, args ...interface{}) {
+func (cm *ConsensusModule) dlog(format string, args ...any) {
 	if DebugCM > 0 {
 		format = fmt.Sprintf("[%d] ", cm.id) + format
 		log.Printf(format, args...)

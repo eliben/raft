@@ -46,7 +46,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 	connected := make([]bool, n)
 	commitChans := make([]chan CommitEntry, n)
 	commits := make([][]CommitEntry, n)
-	ready := make(chan interface{})
+	ready := make(chan any)
 
 	// Create all Servers in this cluster, assign ids and peer ids.
 	for i := 0; i < n; i++ {
@@ -265,11 +265,11 @@ func (h *Harness) CheckNotCommitted(cmd int) {
 }
 
 // SubmitToServer submits the command to serverId.
-func (h *Harness) SubmitToServer(serverId int, cmd interface{}) bool {
+func (h *Harness) SubmitToServer(serverId int, cmd any) bool {
 	return h.cluster[serverId].cm.Submit(cmd)
 }
 
-func tlog(format string, a ...interface{}) {
+func tlog(format string, a ...any) {
 	format = "[TEST] " + format
 	log.Printf(format, a...)
 }
