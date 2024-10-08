@@ -1,6 +1,6 @@
 module github.com/eliben/raft/part4kv
 
-go 1.22.5
+go 1.23.1
 
 replace github.com/eliben/raft/part3/raft => ../part3/raft/
 
