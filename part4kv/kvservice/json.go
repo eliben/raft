@@ -1,3 +1,7 @@
+// JSON utilities for the KV service.
+//
+// Eli Bendersky [https://eli.thegreenplace.net]
+// This code is in the public domain.
 package kvservice
 
 import (

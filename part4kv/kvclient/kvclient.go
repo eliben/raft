@@ -1,3 +1,8 @@
+// KV client library. Go code that wants to talk to the KV service should use
+// this client instead of sending REST requests directly.
+//
+// Eli Bendersky [https://eli.thegreenplace.net]
+// This code is in the public domain.
 package kvclient
 
 import (

@@ -1,3 +1,7 @@
+// REST API data types for the KV service.
+//
+// Eli Bendersky [https://eli.thegreenplace.net]
+// This code is in the public domain.
 package api
 
 // Defines the data structures used in the REST API between kvservice and

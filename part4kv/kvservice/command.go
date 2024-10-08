@@ -1,3 +1,7 @@
+// Command type: stored in Raft by the KV service.
+//
+// Eli Bendersky [https://eli.thegreenplace.net]
+// This code is in the public domain.
 package kvservice
 
 // Command is the concrete command type KVService submits to the Raft log to
