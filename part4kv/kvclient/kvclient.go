@@ -16,9 +16,6 @@ import (
 // DebugClient enables debug output
 const DebugClient = 1
 
-// clientCount is used internally for debugging
-var clientCount atomic.Int32
-
 type KVClient struct {
 	addrs []string
 
@@ -40,6 +37,9 @@ func New(serviceAddrs []string) *KVClient {
 		clientID:      clientCount.Add(1),
 	}
 }
+
+// clientCount is used internally for debugging
+var clientCount atomic.Int32
 
 // Put the key=value pair into the store. Returns an error, or
 // (prevValue, keyFound, false), where keyFound specifies whether the key was
@@ -83,17 +83,32 @@ func (c *KVClient) CAS(ctx context.Context, key string, compare string, value st
 }
 
 func (c *KVClient) send(ctx context.Context, route string, req any, resp api.Response) error {
+	// This loop rotates through the list of service addresses until we get
+	// a response that indicates we've found the leader of the cluster. It
+	// starts at c.assumedLeader
 FindLeader:
 	for {
+		// There's a two-level context tree here: we have the user context - ctx,
+		// and we create our own context to impose a timeout on each request to
+		// the service. If our timeout expires, we move on to try the next service.
+		// In the meantime, we have to keep an eye on the user context - if that's
+		// canceled at any time (due to timeout, explicit cancelation, etc), we
+		// bail out.
 		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)
+
 		c.clientlog("sending %#v to %v", req, path)
 		if err := sendJSONRequest(retryCtx, path, req, resp); err != nil {
+			// Since the contexts are nested, the order of testing here matters.
+			// We have to check the parent context first - if it's done, it means
+			// we have to return.
 			if contextDone(ctx) {
 				c.clientlog("parent context done; bailing out")
 				retryCtxCancel()
 				return err
 			} else if contextDeadlineExceeded(retryCtx) {
+				// If the parent context is not done, but our retry context is done,
+				// it's time to retry a different service.
 				c.clientlog("timed out: will try next address")
 				c.assumedLeader = (c.assumedLeader + 1) % len(c.addrs)
 				retryCtxCancel()
@@ -104,6 +119,7 @@ FindLeader:
 		}
 		c.clientlog("received response %#v", resp)
 
+		// No context/timeout on this request - we've actually received a response.
 		switch resp.Status() {
 		case api.StatusNotLeader:
 			c.clientlog("not leader: will try next address")

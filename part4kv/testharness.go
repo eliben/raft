@@ -321,7 +321,7 @@ func (h *Harness) CheckGetTimesOut(c *kvclient.KVClient, key string) {
 	}
 }
 
-func tlog(format string, a ...interface{}) {
+func tlog(format string, a ...any) {
 	format = "[TEST] " + format
 	log.Printf(format, a...)
 }
