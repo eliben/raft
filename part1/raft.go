@@ -16,7 +16,7 @@ import (
 const DebugCM = 1
 
 type LogEntry struct {
-	Command interface{}
+	Command any
 	Term    int
 }
 
@@ -72,7 +72,7 @@ type ConsensusModule struct {
 // NewConsensusModule creates a new CM with the given ID, list of peer IDs and
 // server. The ready channel signals the CM that all peers are connected and
 // it's safe to start its state machine.
-func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan interface{}) *ConsensusModule {
+func NewConsensusModule(id int, peerIds []int, server *Server, ready <-chan any) *ConsensusModule {
 	cm := new(ConsensusModule)
 	cm.id = id
 	cm.peerIds = peerIds
@@ -111,7 +111,7 @@ func (cm *ConsensusModule) Stop() {
 }
 
 // dlog logs a debugging message if DebugCM > 0.
-func (cm *ConsensusModule) dlog(format string, args ...interface{}) {
+func (cm *ConsensusModule) dlog(format string, args ...any) {
 	if DebugCM > 0 {
 		format = fmt.Sprintf("[%d] ", cm.id) + format
 		log.Printf(format, args...)

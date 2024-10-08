@@ -32,7 +32,7 @@ type Harness struct {
 func NewHarness(t *testing.T, n int) *Harness {
 	ns := make([]*Server, n)
 	connected := make([]bool, n)
-	ready := make(chan interface{})
+	ready := make(chan any)
 
 	// Create all Servers in this cluster, assign ids and peer ids.
 	for i := 0; i < n; i++ {
@@ -148,7 +148,7 @@ func (h *Harness) CheckNoLeader() {
 	}
 }
 
-func tlog(format string, a ...interface{}) {
+func tlog(format string, a ...any) {
 	format = "[TEST] " + format
 	log.Printf(format, a...)
 }

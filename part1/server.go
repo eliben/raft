@@ -36,18 +36,18 @@ type Server struct {
 
 	peerClients map[int]*rpc.Client
 
-	ready <-chan interface{}
-	quit  chan interface{}
+	ready <-chan any
+	quit  chan any
 	wg    sync.WaitGroup
 }
 
-func NewServer(serverId int, peerIds []int, ready <-chan interface{}) *Server {
+func NewServer(serverId int, peerIds []int, ready <-chan any) *Server {
 	s := new(Server)
 	s.serverId = serverId
 	s.peerIds = peerIds
 	s.peerClients = make(map[int]*rpc.Client)
 	s.ready = ready
-	s.quit = make(chan interface{})
+	s.quit = make(chan any)
 	return s
 }
 
@@ -143,7 +143,7 @@ func (s *Server) DisconnectPeer(peerId int) error {
 	return nil
 }
 
-func (s *Server) Call(id int, serviceMethod string, args interface{}, reply interface{}) error {
+func (s *Server) Call(id int, serviceMethod string, args any, reply any) error {
 	s.mu.Lock()
 	peer := s.peerClients[id]
 	s.mu.Unlock()
@@ -159,10 +159,10 @@ func (s *Server) Call(id int, serviceMethod string, args interface{}, reply inte
 
 // RPCProxy is a trivial pass-thru proxy type for ConsensusModule's RPC methods.
 // It's useful for:
-// - Simulating a small delay in RPC transmission.
-// - Avoiding running into https://github.com/golang/go/issues/19957
-// - Simulating possible unreliable connections by delaying some messages
-//   significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
+//   - Simulating a small delay in RPC transmission.
+//   - Avoiding running into https://github.com/golang/go/issues/19957
+//   - Simulating possible unreliable connections by delaying some messages
+//     significantly and dropping others when RAFT_UNRELIABLE_RPC is set.
 type RPCProxy struct {
 	cm *ConsensusModule
 }
