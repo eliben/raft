@@ -1,4 +1,8 @@
-// System test for KV services and clients.
+// Test KV services and clients.
+//
+// It's called a "system" test because it doesn't test a component (like
+// KVService) in isolation; rather, the test harness constructs a complete
+// system comprising of a cluster of services and some KVClients to exercise it.
 //
 // Eli Bendersky [https://eli.thegreenplace.net]
 // This code is in the public domain.

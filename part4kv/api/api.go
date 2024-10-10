@@ -5,7 +5,9 @@
 package api
 
 // Defines the data structures used in the REST API between kvservice and
-// clients. Uses bespoke ResponseStatus per response instead of HTTP status
+// clients. These structs are JSON-encoded into the body of HTTP requests
+// and responses passed between services and clients.
+// Uses bespoke ResponseStatus per response instead of HTTP status
 // codes because some statuses like "not leader" or "failed commit" don't have a
 // good match in standard HTTP status codes.
 
