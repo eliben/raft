@@ -97,7 +97,7 @@ FindLeader:
 		// and we create our own context to impose a timeout on each request to
 		// the service. If our timeout expires, we move on to try the next service.
 		// In the meantime, we have to keep an eye on the user context - if that's
-		// canceled at any time (due to timeout, explicit cancelation, etc), we
+		// canceled at any time (due to timeout, explicit cancellation, etc), we
 		// bail out.
 		retryCtx, retryCtxCancel := context.WithTimeout(ctx, 50*time.Millisecond)
 		path := fmt.Sprintf("http://%s/%s/", c.addrs[c.assumedLeader], route)

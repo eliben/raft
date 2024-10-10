@@ -150,7 +150,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Subsribe for a commit update for our log index. Then wait for it to
+	// Subscribe for a commit update for our log index. Then wait for it to
 	// be delivered.
 	sub := kvs.createCommitSubsciption(logIndex)
 
@@ -289,7 +289,7 @@ func (kvs *KVService) runUpdater() {
 			}
 
 			// We're modifying the command to include results from the datastore,
-			// so clone an entry with the update command for the subscibers.
+			// so clone an entry with the update command for the subscribers.
 			newEntry := raft.CommitEntry{
 				Command: cmd,
 				Index:   entry.Index,
