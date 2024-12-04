@@ -34,7 +34,7 @@ type KVService struct {
 	commitChan chan raft.CommitEntry
 
 	// commitSubs are the commit subscriptions currently active in this service.
-	// See the createCommitSubsciption method for more details.
+	// See the createCommitSubscription method for more details.
 	commitSubs map[int]chan raft.CommitEntry
 
 	// ds is the underlying data store implementing the KV DB.
@@ -152,7 +152,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 
 	// Subscribe for a commit update for our log index. Then wait for it to
 	// be delivered.
-	sub := kvs.createCommitSubsciption(logIndex)
+	sub := kvs.createCommitSubscription(logIndex)
 
 	// Wait on the sub channel: the updater will deliver a value when the Raft
 	// log has a commit at logIndex. To ensure clean shutdown of the service,
@@ -202,7 +202,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 
 	// Subsribe for a commit update for our log index. Then wait for it to
 	// be delivered.
-	sub := kvs.createCommitSubsciption(logIndex)
+	sub := kvs.createCommitSubscription(logIndex)
 
 	// Wait on the sub channel: the updater will deliver a value when the Raft
 	// log has a commit at logIndex. To ensure clean shutdown of the service,
@@ -249,7 +249,7 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	sub := kvs.createCommitSubsciption(logIndex)
+	sub := kvs.createCommitSubscription(logIndex)
 
 	select {
 	case entry := <-sub:
@@ -271,7 +271,7 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 // runUpdater runs the "updater" goroutine that reads the commit channel
 // from Raft and updates the data store; this is the Replicated State Machine
 // part of distributed consensus!
-// It also notifies subscribers (registered with createCommitSubsciption).
+// It also notifies subscribers (registered with createCommitSubscription).
 func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
@@ -306,13 +306,13 @@ func (kvs *KVService) runUpdater() {
 	}()
 }
 
-// createCommitSubsciption creates a "commit subscription" for a certain log
+// createCommitSubscription creates a "commit subscription" for a certain log
 // index. It's used by client request handlers that submit a command to the
-// Raft CM. createCommitSubsciption(index) means "I want to be notified when
+// Raft CM. createCommitSubscription(index) means "I want to be notified when
 // an entry is committed at this index in the Raft log". The entry is delivered
 // on the returend (buffered) channel by the updater goroutine, after which
 // the channel is closed and the subscription is automatically canceled.
-func (kvs *KVService) createCommitSubsciption(logIndex int) chan raft.CommitEntry {
+func (kvs *KVService) createCommitSubscription(logIndex int) chan raft.CommitEntry {
 	kvs.Lock()
 	defer kvs.Unlock()
 
