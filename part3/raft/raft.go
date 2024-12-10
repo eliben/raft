@@ -184,8 +184,8 @@ func (cm *ConsensusModule) Submit(command any) int {
 func (cm *ConsensusModule) Stop() {
 	cm.dlog("CM.Stop called")
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 	cm.state = Dead
+	cm.mu.Unlock()
 	cm.dlog("becomes Dead")
 
 	// Close the commit notification channel, and wait for the goroutine that
