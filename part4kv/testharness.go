@@ -137,7 +137,6 @@ func (h *Harness) ReconnectServiceToPeers(id int) {
 		}
 	}
 	h.connected[id] = true
-
 }
 
 // CrashService "crashes" a service by disconnecting it from all peers and
@@ -174,6 +173,14 @@ func (h *Harness) RestartService(id int) {
 	close(ready)
 	h.alive[id] = true
 	time.Sleep(20 * time.Millisecond)
+}
+
+// DisableHTTPResponsesFromService causes the given service to stop responding
+// to HTTP request from clients (though it will still perform the requested
+// operations).
+func (h *Harness) DisableHTTPResponsesFromService(id int) {
+	tlog("Disabling HTTP responses from %d", id)
+	h.kvCluster[id].ToggleHTTPResponsesEnabled(false)
 }
 
 func (h *Harness) Shutdown() {
