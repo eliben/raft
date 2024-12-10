@@ -75,6 +75,29 @@ func TestPutPrevValue(t *testing.T) {
 	}
 }
 
+func TestBasicAppendSameClient(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+	h.CheckPut(c1, "foo", "bar")
+
+	// Append to a key that existed
+	prev, found := h.CheckAppend(c1, "foo", "baz")
+	if !found || prev != "bar" {
+		t.Errorf(`got found=%v, prev=%v, want true/"foo"`, found, prev)
+	}
+	h.CheckGet(c1, "foo", "barbaz")
+
+	// Append to a key that didn't exist
+	prev, found = h.CheckAppend(c1, "mix", "match")
+	if found || prev != "" {
+		t.Errorf(`got found=%v, prev=%v, want false/""`, found, prev)
+	}
+	h.CheckGet(c1, "mix", "match")
+}
+
 func TestBasicPutGetDifferentClients(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 

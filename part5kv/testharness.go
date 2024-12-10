@@ -276,6 +276,18 @@ func (h *Harness) CheckPut(c *kvclient.KVClient, key, value string) (string, boo
 	return pv, f
 }
 
+// CheckAppend sends a Append request through client c, and checks there are no
+// errors. Returns (prevValue, keyFound).
+func (h *Harness) CheckAppend(c *kvclient.KVClient, key, value string) (string, bool) {
+	ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
+	defer cancel()
+	pv, f, err := c.Append(ctx, key, value)
+	if err != nil {
+		h.t.Error(err)
+	}
+	return pv, f
+}
+
 // CheckGet sends a Get request through client c, and checks there are
 // no errors; it also checks that the key was found, and has the expected
 // value.

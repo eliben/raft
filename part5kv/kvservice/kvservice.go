@@ -93,6 +93,7 @@ func (kvs *KVService) ServeHTTP(port int) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /get/", kvs.handleGet)
 	mux.HandleFunc("POST /put/", kvs.handlePut)
+	mux.HandleFunc("POST /append/", kvs.handleAppend)
 	mux.HandleFunc("POST /cas/", kvs.handleCAS)
 
 	kvs.srv = &http.Server{
@@ -191,6 +192,57 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 			})
 		} else {
 			kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
+		}
+	case <-req.Context().Done():
+		return
+	}
+}
+
+func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
+	ar := &api.AppendRequest{}
+	if err := readRequestJSON(req, ar); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	kvs.kvlog("HTTP APPEND %v", ar)
+
+	// Submit a command into the Raft server; this is the state change in the
+	// replicated state machine built on top of the Raft log.
+	cmd := Command{
+		Kind:  CommandAppend,
+		Key:   ar.Key,
+		Value: ar.Value,
+		Id:    kvs.id,
+	}
+	logIndex := kvs.rs.Submit(cmd)
+	// If we're not the Raft leader, send an appropriate status
+	if logIndex < 0 {
+		kvs.sendHTTPResponse(w, api.AppendResponse{RespStatus: api.StatusNotLeader})
+		return
+	}
+
+	// Subscribe for a commit update for our log index. Then wait for it to
+	// be delivered.
+	sub := kvs.createCommitSubscription(logIndex)
+
+	// Wait on the sub channel: the updater will deliver a value when the Raft
+	// log has a commit at logIndex. To ensure clean shutdown of the service,
+	// also select on the request context - if the request is canceled, this
+	// handler aborts without sending data back to the client.
+	select {
+	case entry := <-sub:
+		// If this is our command, all is good! If it's some other server's command,
+		// this means we lost leadership at some point and should return an error
+		// to the client.
+		entryCmd := entry.Command.(Command)
+		if entryCmd.Id == kvs.id {
+			kvs.sendHTTPResponse(w, api.AppendResponse{
+				RespStatus: api.StatusOK,
+				KeyFound:   entryCmd.ResultFound,
+				PrevValue:  entryCmd.ResultValue,
+			})
+		} else {
+			kvs.sendHTTPResponse(w, api.AppendResponse{RespStatus: api.StatusFailedCommit})
 		}
 	case <-req.Context().Done():
 		return
@@ -301,6 +353,8 @@ func (kvs *KVService) runUpdater() {
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.Get(cmd.Key)
 			case CommandPut:
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
+			case CommandAppend:
+				cmd.ResultValue, cmd.ResultFound = kvs.ds.Append(cmd.Key, cmd.Value)
 			case CommandCAS:
 				cmd.ResultValue, cmd.ResultFound = kvs.ds.CAS(cmd.Key, cmd.CompareValue, cmd.Value)
 			default:

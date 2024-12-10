@@ -22,6 +22,16 @@ package kvservice
 // * ResultFound is true iff Key was previously found in the store
 // * ResultValue is the old value of Key, if it was previously found
 //
+// CommandAppend: appends to a key's value
+//
+//	If Key wasn't previously in the store, it's created with the given
+//	Value (as if it was present with an empty value before this operation).
+//
+// * Performs Store[Key] = Store[Key] + Value, where "+" is a string append
+// * CompareValue is ignored
+// * ResultFound is true iff the Key was found in the store
+// * ResultValue is the old value of Key, before the append
+//
 // CommandCAS: atomic compare-and-swap, performs:
 //
 //	if Store[Key] == CompareValue {
@@ -55,6 +65,7 @@ const (
 	CommandInvalid CommandKind = iota
 	CommandGet
 	CommandPut
+	CommandAppend
 	CommandCAS
 )
 
@@ -62,6 +73,7 @@ var commandName = map[CommandKind]string{
 	CommandInvalid: "invalid",
 	CommandGet:     "get",
 	CommandPut:     "put",
+	CommandAppend:  "append",
 	CommandCAS:     "cas",
 }
 

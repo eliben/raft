@@ -40,6 +40,20 @@ func (ds *DataStore) Put(key, value string) (string, bool) {
 	return v, ok
 }
 
+// Append performs an append:
+// If key exists and its previous value is v, its value is updated to
+// v+value and (v, true) is returned.
+// If key doesn't exist, then assigns datastore[key]=value and ("", false) is
+// returned.
+func (ds *DataStore) Append(key, value string) (string, bool) {
+	ds.Lock()
+	defer ds.Unlock()
+
+	v, ok := ds.data[key]
+	ds.data[key] += value
+	return v, ok
+}
+
 // CAS performs an atomic compare-and-swap:
 // if key exists and its prev value == compare, write value, else nop
 // The prev value and whether the key existed in the store is returned.

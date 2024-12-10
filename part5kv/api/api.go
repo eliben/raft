@@ -11,13 +11,13 @@ package api
 // codes because some statuses like "not leader" or "failed commit" don't have a
 // good match in standard HTTP status codes.
 
+type Response interface {
+	Status() ResponseStatus
+}
+
 type PutRequest struct {
 	Key   string
 	Value string
-}
-
-type Response interface {
-	Status() ResponseStatus
 }
 
 type PutResponse struct {
@@ -28,6 +28,21 @@ type PutResponse struct {
 
 func (pr *PutResponse) Status() ResponseStatus {
 	return pr.RespStatus
+}
+
+type AppendRequest struct {
+	Key   string
+	Value string
+}
+
+type AppendResponse struct {
+	RespStatus ResponseStatus
+	KeyFound   bool
+	PrevValue  string
+}
+
+func (ar *AppendResponse) Status() ResponseStatus {
+	return ar.RespStatus
 }
 
 type GetRequest struct {

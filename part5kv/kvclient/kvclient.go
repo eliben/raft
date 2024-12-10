@@ -60,6 +60,20 @@ func (c *KVClient) Put(ctx context.Context, key string, value string) (string, b
 	return putResp.PrevValue, putResp.KeyFound, err
 }
 
+// Append the value to the key in the store. Returns an error, or
+// (prevValue, keyFound, false), where keyFound specifies whether the key was
+// found in the store prior to this command, and prevValue is its previous
+// value if it was found.
+func (c *KVClient) Append(ctx context.Context, key string, value string) (string, bool, error) {
+	appendReq := api.AppendRequest{
+		Key:   key,
+		Value: value,
+	}
+	var appendResp api.AppendResponse
+	err := c.send(ctx, "append", appendReq, &appendResp)
+	return appendResp.PrevValue, appendResp.KeyFound, err
+}
+
 // Get the value of key from the store. Returns an error, or
 // (value, found, false), where found specifies whether the key was found in
 // the store, and value is its value.
