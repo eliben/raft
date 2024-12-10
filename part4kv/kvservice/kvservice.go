@@ -127,6 +127,10 @@ func (kvs *KVService) Shutdown() error {
 	return nil
 }
 
+func (kvs *KVService) sendHTTPResponse(w http.ResponseWriter, v any) {
+	renderJSON(w, v)
+}
+
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	pr := &api.PutRequest{}
 	if err := readRequestJSON(req, pr); err != nil {
@@ -146,7 +150,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	logIndex := kvs.rs.Submit(cmd)
 	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
-		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
+		kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
@@ -165,13 +169,13 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.PutResponse{
+			kvs.sendHTTPResponse(w, api.PutResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
 				PrevValue:  entryCmd.ResultValue,
 			})
 		} else {
-			renderJSON(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
+			kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
 		}
 	case <-req.Context().Done():
 		return
@@ -196,7 +200,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	logIndex := kvs.rs.Submit(cmd)
 	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
-		renderJSON(w, api.GetResponse{RespStatus: api.StatusNotLeader})
+		kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
@@ -215,13 +219,13 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.GetResponse{
+			kvs.sendHTTPResponse(w, api.GetResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
 				Value:      entryCmd.ResultValue,
 			})
 		} else {
-			renderJSON(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
+			kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
 		}
 	case <-req.Context().Done():
 		return
@@ -245,7 +249,7 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	if logIndex < 0 {
-		renderJSON(w, api.PutResponse{RespStatus: api.StatusNotLeader})
+		kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
@@ -255,13 +259,13 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	case entry := <-sub:
 		entryCmd := entry.Command.(Command)
 		if entryCmd.Id == kvs.id {
-			renderJSON(w, api.CASResponse{
+			kvs.sendHTTPResponse(w, api.CASResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
 				PrevValue:  entryCmd.ResultValue,
 			})
 		} else {
-			renderJSON(w, api.CASResponse{RespStatus: api.StatusFailedCommit})
+			kvs.sendHTTPResponse(w, api.CASResponse{RespStatus: api.StatusFailedCommit})
 		}
 	case <-req.Context().Done():
 		return
