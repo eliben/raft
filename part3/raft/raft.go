@@ -84,8 +84,11 @@ type ConsensusModule struct {
 
 	// newCommitReadyChan is an internal notification channel used by goroutines
 	// that commit new entries to the log to notify that these entries may be sent
-	// on commitChan.
-	newCommitReadyChan chan struct{}
+	// on commitChan. A goroutine monitors this channel and sends entries on
+	// newCommitReadyChanWg when notified; commitChanWg is used to wait for this
+	// goroutine to exit, to ensure a clean shutdown.
+	newCommitReadyChan   chan struct{}
+	newCommitReadyChanWg sync.WaitGroup
 
 	// triggerAEChan is an internal notification channel used to trigger
 	// sending new AEs to followers when interesting changes occurred.
@@ -141,6 +144,7 @@ func NewConsensusModule(id int, peerIds []int, server *Server, storage Storage, 
 		cm.runElectionTimer()
 	}()
 
+	cm.newCommitReadyChanWg.Add(1)
 	go cm.commitChanSender()
 	return cm
 }
@@ -178,11 +182,16 @@ func (cm *ConsensusModule) Submit(command any) int {
 // it may take a bit of time (up to ~election timeout) for all goroutines to
 // exit.
 func (cm *ConsensusModule) Stop() {
+	cm.dlog("CM.Stop called")
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.state = Dead
 	cm.dlog("becomes Dead")
+
+	// Close the commit notification channel, and wait for the goroutine that
+	// monitors it to exit.
 	close(cm.newCommitReadyChan)
+	cm.newCommitReadyChanWg.Wait()
 }
 
 // restoreFromStorage restores the persistent state of this CM from storage.
@@ -711,6 +720,8 @@ func (cm *ConsensusModule) lastLogIndexAndTerm() (int, int) {
 // the client consumes new committed entries. Returns when newCommitReadyChan is
 // closed.
 func (cm *ConsensusModule) commitChanSender() {
+	defer cm.newCommitReadyChanWg.Done()
+
 	for range cm.newCommitReadyChan {
 		// Find which entries we have to apply.
 		cm.mu.Lock()
