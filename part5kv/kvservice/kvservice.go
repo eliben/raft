@@ -139,8 +139,8 @@ func (kvs *KVService) DelayNextHTTPResponse() {
 
 func (kvs *KVService) sendHTTPResponse(w http.ResponseWriter, v any) {
 	if kvs.delayNextHTTPResponse.Load() {
-		time.Sleep(300 * time.Millisecond)
 		kvs.delayNextHTTPResponse.Store(false)
+		time.Sleep(300 * time.Millisecond)
 	}
 	kvs.kvlog("sending response %#v", v)
 	renderJSON(w, v)
