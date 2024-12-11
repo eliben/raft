@@ -443,9 +443,12 @@ func TestAppendLinearizable(t *testing.T) {
 	h.CheckAppend(c1, "foo", "baz")
 	h.CheckGet(c1, "foo", "barbaz")
 
+	// Ask the service to delay the response to the next request, and send
+	// an append. The client will retry this append, so the system has to be
+	// resilient to this.
 	h.DelayNextHTTPResponseFromService(lid)
 	h.CheckAppend(c1, "foo", "mira")
 
-	sleepMs(500)
+	sleepMs(100)
 	h.CheckGet(c1, "foo", "barbazmira")
 }

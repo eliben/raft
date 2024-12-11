@@ -44,8 +44,9 @@ type KVService struct {
 	// srv is the HTTP server exposed by the service to the external world.
 	srv *http.Server
 
-	// delayNextHTTPResponse asks the service to delay its next HTTP response
-	// to the client.
+	// delayNextHTTPResponse will be on when the service was requested to
+	// delay its next HTTP response to the client. This flips back to off after
+	// use.
 	delayNextHTTPResponse atomic.Bool
 }
 
@@ -133,6 +134,10 @@ func (kvs *KVService) Shutdown() error {
 	return nil
 }
 
+// DelayNextHTTPResponse instructs the service to delay the response to the
+// next HTTP request from the client. The service still acts on the request
+// as usual, just the HTTP response is delayed. This only applies to a single
+// response - the bit flips back to off after use.
 func (kvs *KVService) DelayNextHTTPResponse() {
 	kvs.delayNextHTTPResponse.Store(true)
 }

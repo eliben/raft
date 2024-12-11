@@ -175,9 +175,8 @@ func (h *Harness) RestartService(id int) {
 	time.Sleep(20 * time.Millisecond)
 }
 
-// DelayNextHTTPResponseFromService causes the given service to delay the
-// repsponse to the next HTTP request by a client. Tt still acts on the request
-// as usual, just the HTTP response is delayed.
+// DelayNextHTTPResponseFromService delays the next HTTP response from this
+// service to a client.
 func (h *Harness) DelayNextHTTPResponseFromService(id int) {
 	tlog("Delaying next HTTP response from %d", id)
 	h.kvCluster[id].DelayNextHTTPResponse()
