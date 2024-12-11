@@ -113,6 +113,30 @@ func TestBasicPutGetDifferentClients(t *testing.T) {
 	sleepMs(80)
 }
 
+func TestBasicAppendDifferentClients(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+	h.CheckPut(c1, "foo", "bar")
+
+	// Append to a key that existed
+	c2 := h.NewClient()
+	prev, found := h.CheckAppend(c2, "foo", "baz")
+	if !found || prev != "bar" {
+		t.Errorf(`got found=%v, prev=%v, want true/"foo"`, found, prev)
+	}
+	h.CheckGet(c1, "foo", "barbaz")
+
+	// Append to a key that didn't exist
+	prev, found = h.CheckAppend(c2, "mix", "match")
+	if found || prev != "" {
+		t.Errorf(`got found=%v, prev=%v, want false/""`, found, prev)
+	}
+	h.CheckGet(c1, "mix", "match")
+}
+
 func TestCASBasic(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
@@ -405,4 +429,23 @@ func TestCrashThenRestartLeader(t *testing.T) {
 			h.CheckGet(c, fmt.Sprintf("key%v", j), fmt.Sprintf("value%v", j))
 		}
 	}
+}
+
+func TestAppendLinearizable(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+
+	// A sequence of put+append, check we get the right result.
+	h.CheckPut(c1, "foo", "bar")
+	h.CheckAppend(c1, "foo", "baz")
+	h.CheckGet(c1, "foo", "barbaz")
+
+	h.DelayNextHTTPResponseFromService(lid)
+	h.CheckAppend(c1, "foo", "mira")
+
+	sleepMs(500)
+	h.CheckGet(c1, "foo", "barbazmira")
 }

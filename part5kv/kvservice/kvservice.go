@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eliben/raft/part3/raft"
@@ -43,9 +44,9 @@ type KVService struct {
 	// srv is the HTTP server exposed by the service to the external world.
 	srv *http.Server
 
-	// httpResponsesEnabled controls whether this service returns HTTP responses
-	// to the client. It's only used for testing and debugging.
-	httpResponsesEnabled bool
+	// delayNextHTTPResponse asks the service to delay its next HTTP response
+	// to the client.
+	delayNextHTTPResponse atomic.Bool
 }
 
 // New creates a new KVService
@@ -65,12 +66,11 @@ func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVS
 	rs := raft.NewServer(id, peerIds, storage, readyChan, commitChan)
 	rs.Serve()
 	kvs := &KVService{
-		id:                   id,
-		rs:                   rs,
-		commitChan:           commitChan,
-		ds:                   NewDataStore(),
-		commitSubs:           make(map[int]chan raft.CommitEntry),
-		httpResponsesEnabled: true,
+		id:         id,
+		rs:         rs,
+		commitChan: commitChan,
+		ds:         NewDataStore(),
+		commitSubs: make(map[int]chan raft.CommitEntry),
 	}
 
 	kvs.runUpdater()
@@ -133,18 +133,17 @@ func (kvs *KVService) Shutdown() error {
 	return nil
 }
 
-// ToggleHTTPResponsesEnabled controls whether this service returns HTTP
-// responses to clients. It's always enabled during normal operation.
-// For testing and debugging purposes, this method can be called with false;
-// then, the service will not respond to clients over HTTP.
-func (kvs *KVService) ToggleHTTPResponsesEnabled(enable bool) {
-	kvs.httpResponsesEnabled = enable
+func (kvs *KVService) DelayNextHTTPResponse() {
+	kvs.delayNextHTTPResponse.Store(true)
 }
 
 func (kvs *KVService) sendHTTPResponse(w http.ResponseWriter, v any) {
-	if kvs.httpResponsesEnabled {
-		renderJSON(w, v)
+	if kvs.delayNextHTTPResponse.Load() {
+		time.Sleep(300 * time.Millisecond)
+		kvs.delayNextHTTPResponse.Store(false)
 	}
+	kvs.kvlog("sending response %#v", v)
+	renderJSON(w, v)
 }
 
 func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {

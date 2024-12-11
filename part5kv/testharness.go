@@ -175,12 +175,12 @@ func (h *Harness) RestartService(id int) {
 	time.Sleep(20 * time.Millisecond)
 }
 
-// DisableHTTPResponsesFromService causes the given service to stop responding
-// to HTTP request from clients (though it will still perform the requested
-// operations).
-func (h *Harness) DisableHTTPResponsesFromService(id int) {
-	tlog("Disabling HTTP responses from %d", id)
-	h.kvCluster[id].ToggleHTTPResponsesEnabled(false)
+// DelayNextHTTPResponseFromService causes the given service to delay the
+// repsponse to the next HTTP request by a client. Tt still acts on the request
+// as usual, just the HTTP response is delayed.
+func (h *Harness) DelayNextHTTPResponseFromService(id int) {
+	tlog("Delaying next HTTP response from %d", id)
+	h.kvCluster[id].DelayNextHTTPResponse()
 }
 
 func (h *Harness) Shutdown() {
