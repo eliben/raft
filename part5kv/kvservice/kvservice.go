@@ -36,7 +36,7 @@ type KVService struct {
 
 	// commitSubs are the commit subscriptions currently active in this service.
 	// See the createCommitSubscription method for more details.
-	commitSubs map[int]chan raft.CommitEntry
+	commitSubs map[int]chan Command
 
 	// ds is the underlying data store implementing the KV DB.
 	ds *DataStore
@@ -77,7 +77,7 @@ func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVS
 		rs:                     rs,
 		commitChan:             commitChan,
 		ds:                     NewDataStore(),
-		commitSubs:             make(map[int]chan raft.CommitEntry),
+		commitSubs:             make(map[int]chan Command),
 		lastRequestIDPerClient: make(map[int64]int64),
 	}
 
@@ -192,21 +192,20 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	// also select on the request context - if the request is canceled, this
 	// handler aborts without sending data back to the client.
 	select {
-	case entry := <-sub:
+	case commitCmd := <-sub:
 		// If this is our command, all is good! If it's some other server's command,
 		// this means we lost leadership at some point and should return an error
 		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.ServiceID == kvs.id {
-			if entryCmd.IsDuplicate {
+		if commitCmd.ServiceID == kvs.id {
+			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
 				kvs.sendHTTPResponse(w, api.PutResponse{
 					RespStatus: api.StatusOK,
-					KeyFound:   entryCmd.ResultFound,
-					PrevValue:  entryCmd.ResultValue,
+					KeyFound:   commitCmd.ResultFound,
+					PrevValue:  commitCmd.ResultValue,
 				})
 			}
 		} else {
@@ -251,21 +250,20 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 	// also select on the request context - if the request is canceled, this
 	// handler aborts without sending data back to the client.
 	select {
-	case entry := <-sub:
+	case commitCmd := <-sub:
 		// If this is our command, all is good! If it's some other server's command,
 		// this means we lost leadership at some point and should return an error
 		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.ServiceID == kvs.id {
-			if entryCmd.IsDuplicate {
+		if commitCmd.ServiceID == kvs.id {
+			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
 				kvs.sendHTTPResponse(w, api.AppendResponse{
 					RespStatus: api.StatusOK,
-					KeyFound:   entryCmd.ResultFound,
-					PrevValue:  entryCmd.ResultValue,
+					KeyFound:   commitCmd.ResultFound,
+					PrevValue:  commitCmd.ResultValue,
 				})
 			}
 		} else {
@@ -309,21 +307,20 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	// also select on the request context - if the request is canceled, this
 	// handler aborts without sending data back to the client.
 	select {
-	case entry := <-sub:
+	case commitCmd := <-sub:
 		// If this is our command, all is good! If it's some other server's command,
 		// this means we lost leadership at some point and should return an error
 		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.ServiceID == kvs.id {
-			if entryCmd.IsDuplicate {
+		if commitCmd.ServiceID == kvs.id {
+			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
 				kvs.sendHTTPResponse(w, api.GetResponse{
 					RespStatus: api.StatusOK,
-					KeyFound:   entryCmd.ResultFound,
-					Value:      entryCmd.ResultValue,
+					KeyFound:   commitCmd.ResultFound,
+					Value:      commitCmd.ResultValue,
 				})
 			}
 		} else {
@@ -360,18 +357,17 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	sub := kvs.createCommitSubscription(logIndex)
 
 	select {
-	case entry := <-sub:
-		entryCmd := entry.Command.(Command)
-		if entryCmd.ServiceID == kvs.id {
-			if entryCmd.IsDuplicate {
+	case commitCmd := <-sub:
+		if commitCmd.ServiceID == kvs.id {
+			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusOK,
-					KeyFound:   entryCmd.ResultFound,
-					PrevValue:  entryCmd.ResultValue,
+					KeyFound:   commitCmd.ResultFound,
+					PrevValue:  commitCmd.ResultValue,
 				})
 			}
 		} else {
@@ -389,23 +385,17 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
-			// TODO: why send entry on the channel, and not just the command?
 			cmd := entry.Command.(Command)
-
-			var responseEntry raft.CommitEntry
+			var responseCommand Command
 
 			// Duplicate command detection.
 			lastReqID, ok := kvs.lastRequestIDPerClient[cmd.ClientID]
 			if ok && lastReqID >= cmd.RequestID {
 				kvs.kvlog("duplicate request id=%v, from client id=%v", cmd.RequestID, cmd.ClientID)
 				// Duplicate: this request ID was already applied in hte past!
-				responseEntry = raft.CommitEntry{
-					Command: Command{
-						Kind:        cmd.Kind,
-						IsDuplicate: true,
-					},
-					Index: entry.Index,
-					Term:  entry.Term,
+				responseCommand = Command{
+					Kind:        cmd.Kind,
+					IsDuplicate: true,
 				}
 			} else {
 				kvs.lastRequestIDPerClient[cmd.ClientID] = cmd.RequestID
@@ -422,20 +412,13 @@ func (kvs *KVService) runUpdater() {
 				default:
 					panic(fmt.Errorf("unexpected command %v", cmd))
 				}
-
-				// We're modifying the command to include results from the datastore,
-				// so clone an entry with the update command for the subscribers.
-				responseEntry = raft.CommitEntry{
-					Command: cmd,
-					Index:   entry.Index,
-					Term:    entry.Term,
-				}
+				responseCommand = cmd
 			}
 
-			// Forward this entry to the subscriber interested in its index, and
+			// Forward this command to the subscriber interested in its index, and
 			// close the subscription - it's single-use.
 			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
-				sub <- responseEntry
+				sub <- responseCommand
 				close(sub)
 			}
 		}
@@ -448,7 +431,7 @@ func (kvs *KVService) runUpdater() {
 // an entry is committed at this index in the Raft log". The entry is delivered
 // on the returend (buffered) channel by the updater goroutine, after which
 // the channel is closed and the subscription is automatically canceled.
-func (kvs *KVService) createCommitSubscription(logIndex int) chan raft.CommitEntry {
+func (kvs *KVService) createCommitSubscription(logIndex int) chan Command {
 	kvs.Lock()
 	defer kvs.Unlock()
 
@@ -456,12 +439,12 @@ func (kvs *KVService) createCommitSubscription(logIndex int) chan raft.CommitEnt
 		panic(fmt.Sprintf("duplicate commit subscription for logIndex=%d", logIndex))
 	}
 
-	ch := make(chan raft.CommitEntry, 1)
+	ch := make(chan Command, 1)
 	kvs.commitSubs[logIndex] = ch
 	return ch
 }
 
-func (kvs *KVService) popCommitSubscription(logIndex int) chan raft.CommitEntry {
+func (kvs *KVService) popCommitSubscription(logIndex int) chan Command {
 	kvs.Lock()
 	defer kvs.Unlock()
 
