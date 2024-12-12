@@ -484,3 +484,35 @@ func TestAppendLinearizableAfterDelay(t *testing.T) {
 	sleepMs(300)
 	h.CheckGet(c1, "foo", "barbazmira")
 }
+
+func TestAppendLinearizableAfterCrash(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+
+	h.CheckAppend(c1, "foo", "bar")
+	h.CheckGet(c1, "foo", "bar")
+
+	// Delay response from the leader and then crash it. When a new leader is
+	// selected, we expect to see one append committed (but only one!)
+	h.DelayNextHTTPResponseFromService(lid)
+	go func() {
+		ctx, cancel := context.WithTimeout(h.ctx, 500*time.Millisecond)
+		defer cancel()
+		_, _, err := c1.Append(ctx, "foo", "mira")
+		if err == nil {
+			t.Errorf("got no error; want error")
+		}
+		tlog("received err: %v", err)
+	}()
+
+	sleepMs(50)
+	h.CrashService(lid)
+	h.CheckSingleLeader()
+	c2 := h.NewClient()
+	h.CheckGet(c2, "foo", "barmira")
+}
