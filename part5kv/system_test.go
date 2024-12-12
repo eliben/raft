@@ -138,6 +138,31 @@ func TestBasicAppendDifferentClients(t *testing.T) {
 	h.CheckGet(c1, "mix", "match")
 }
 
+func TestAppendDifferentLeaders(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	lid := h.CheckSingleLeader()
+
+	c1 := h.NewClient()
+	h.CheckAppend(c1, "foo", "bar")
+	h.CheckGet(c1, "foo", "bar")
+
+	// Crash a leader and wait for the cluster to establish a new leader.
+	h.CrashService(lid)
+	h.CheckSingleLeader()
+
+	c2 := h.NewClient()
+	h.CheckAppend(c2, "foo", "baz")
+	h.CheckGet(c2, "foo", "barbaz")
+
+	h.RestartService(lid)
+	c3 := h.NewClient()
+	sleepMs(300)
+	h.CheckGet(c3, "foo", "barbaz")
+}
+
 func TestCASBasic(t *testing.T) {
 	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
@@ -432,7 +457,7 @@ func TestCrashThenRestartLeader(t *testing.T) {
 	}
 }
 
-func TestAppendLinearizable(t *testing.T) {
+func TestAppendLinearizableAfterDelay(t *testing.T) {
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	lid := h.CheckSingleLeader()
