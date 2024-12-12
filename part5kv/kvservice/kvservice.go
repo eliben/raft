@@ -198,6 +198,8 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		if commitCmd.ServiceID == kvs.id {
 			if commitCmd.IsDuplicate {
+				// If this command is a duplicate, it wasn't executed as a result of
+				// this request. Notify the client with a special status.
 				kvs.sendHTTPResponse(w, api.CASResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
@@ -216,6 +218,8 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// The details of these handlers are very similar to handlePut: refer to that
+// function for detailed comments.
 func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 	ar := &api.AppendRequest{}
 	if err := readRequestJSON(req, ar); err != nil {
@@ -224,8 +228,6 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 	}
 	kvs.kvlog("HTTP APPEND %v", ar)
 
-	// Submit a command into the Raft server; this is the state change in the
-	// replicated state machine built on top of the Raft log.
 	cmd := Command{
 		Kind:      CommandAppend,
 		Key:       ar.Key,
@@ -235,25 +237,15 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 		RequestID: ar.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		kvs.sendHTTPResponse(w, api.AppendResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// Subscribe for a commit update for our log index. Then wait for it to
-	// be delivered.
 	sub := kvs.createCommitSubscription(logIndex)
 
-	// Wait on the sub channel: the updater will deliver a value when the Raft
-	// log has a commit at logIndex. To ensure clean shutdown of the service,
-	// also select on the request context - if the request is canceled, this
-	// handler aborts without sending data back to the client.
 	select {
 	case commitCmd := <-sub:
-		// If this is our command, all is good! If it's some other server's command,
-		// this means we lost leadership at some point and should return an error
-		// to the client.
 		if commitCmd.ServiceID == kvs.id {
 			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
@@ -275,8 +267,6 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 }
 
 func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
-	// The details of this handler are very similar to handleGet: refer to that
-	// function for detailed comments.
 	gr := &api.GetRequest{}
 	if err := readRequestJSON(req, gr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -292,25 +282,15 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		RequestID: gr.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// Subsribe for a commit update for our log index. Then wait for it to
-	// be delivered.
 	sub := kvs.createCommitSubscription(logIndex)
 
-	// Wait on the sub channel: the updater will deliver a value when the Raft
-	// log has a commit at logIndex. To ensure clean shutdown of the service,
-	// also select on the request context - if the request is canceled, this
-	// handler aborts without sending data back to the client.
 	select {
 	case commitCmd := <-sub:
-		// If this is our command, all is good! If it's some other server's command,
-		// this means we lost leadership at some point and should return an error
-		// to the client.
 		if commitCmd.ServiceID == kvs.id {
 			if commitCmd.IsDuplicate {
 				kvs.sendHTTPResponse(w, api.CASResponse{
@@ -389,6 +369,8 @@ func (kvs *KVService) runUpdater() {
 			var responseCommand Command
 
 			// Duplicate command detection.
+			// Only accept this request if its ID is higher than the last request from
+			// this client.
 			lastReqID, ok := kvs.lastRequestIDPerClient[cmd.ClientID]
 			if ok && lastReqID >= cmd.RequestID {
 				kvs.kvlog("duplicate request id=%v, from client id=%v", cmd.RequestID, cmd.ClientID)
