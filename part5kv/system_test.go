@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -432,7 +433,6 @@ func TestCrashThenRestartLeader(t *testing.T) {
 }
 
 func TestAppendLinearizable(t *testing.T) {
-	t.Skip()
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
 	lid := h.CheckSingleLeader()
@@ -446,10 +446,16 @@ func TestAppendLinearizable(t *testing.T) {
 
 	// Ask the service to delay the response to the next request, and send
 	// an append. The client will retry this append, so the system has to be
-	// resilient to this.
+	// resilient to this. It will report a duplicate because of the retries,
+	// but the append will be applied successfully.
 	h.DelayNextHTTPResponseFromService(lid)
-	h.CheckAppend(c1, "foo", "mira")
 
-	sleepMs(100)
+	_, _, err := c1.Append(context.Background(), "foo", "mira")
+	if err == nil {
+		t.Errorf("got no error, want duplicate")
+	}
+
+	// Make sure the append was applied successfully, and just once.
+	sleepMs(300)
 	h.CheckGet(c1, "foo", "barbazmira")
 }

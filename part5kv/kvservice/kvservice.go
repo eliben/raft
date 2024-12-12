@@ -198,11 +198,17 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.ServiceID == kvs.id {
-			kvs.sendHTTPResponse(w, api.PutResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
-			})
+			if entryCmd.IsDuplicate {
+				kvs.sendHTTPResponse(w, api.CASResponse{
+					RespStatus: api.StatusDuplicateRequest,
+				})
+			} else {
+				kvs.sendHTTPResponse(w, api.PutResponse{
+					RespStatus: api.StatusOK,
+					KeyFound:   entryCmd.ResultFound,
+					PrevValue:  entryCmd.ResultValue,
+				})
+			}
 		} else {
 			kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
 		}
@@ -251,11 +257,17 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.ServiceID == kvs.id {
-			kvs.sendHTTPResponse(w, api.AppendResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
-			})
+			if entryCmd.IsDuplicate {
+				kvs.sendHTTPResponse(w, api.CASResponse{
+					RespStatus: api.StatusDuplicateRequest,
+				})
+			} else {
+				kvs.sendHTTPResponse(w, api.AppendResponse{
+					RespStatus: api.StatusOK,
+					KeyFound:   entryCmd.ResultFound,
+					PrevValue:  entryCmd.ResultValue,
+				})
+			}
 		} else {
 			kvs.sendHTTPResponse(w, api.AppendResponse{RespStatus: api.StatusFailedCommit})
 		}
@@ -303,11 +315,17 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		// to the client.
 		entryCmd := entry.Command.(Command)
 		if entryCmd.ServiceID == kvs.id {
-			kvs.sendHTTPResponse(w, api.GetResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				Value:      entryCmd.ResultValue,
-			})
+			if entryCmd.IsDuplicate {
+				kvs.sendHTTPResponse(w, api.CASResponse{
+					RespStatus: api.StatusDuplicateRequest,
+				})
+			} else {
+				kvs.sendHTTPResponse(w, api.GetResponse{
+					RespStatus: api.StatusOK,
+					KeyFound:   entryCmd.ResultFound,
+					Value:      entryCmd.ResultValue,
+				})
+			}
 		} else {
 			kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
 		}
@@ -345,11 +363,17 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	case entry := <-sub:
 		entryCmd := entry.Command.(Command)
 		if entryCmd.ServiceID == kvs.id {
-			kvs.sendHTTPResponse(w, api.CASResponse{
-				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
-			})
+			if entryCmd.IsDuplicate {
+				kvs.sendHTTPResponse(w, api.CASResponse{
+					RespStatus: api.StatusDuplicateRequest,
+				})
+			} else {
+				kvs.sendHTTPResponse(w, api.CASResponse{
+					RespStatus: api.StatusOK,
+					KeyFound:   entryCmd.ResultFound,
+					PrevValue:  entryCmd.ResultValue,
+				})
+			}
 		} else {
 			kvs.sendHTTPResponse(w, api.CASResponse{RespStatus: api.StatusFailedCommit})
 		}
