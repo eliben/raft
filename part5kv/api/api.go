@@ -10,6 +10,7 @@ package api
 // Uses bespoke ResponseStatus per response instead of HTTP status
 // codes because some statuses like "not leader" or "failed commit" don't have a
 // good match in standard HTTP status codes.
+// Each request type has fields of unique identification of requests.
 
 type Response interface {
 	Status() ResponseStatus
@@ -18,6 +19,9 @@ type Response interface {
 type PutRequest struct {
 	Key   string
 	Value string
+
+	ClientID  int64
+	RequestID int64
 }
 
 type PutResponse struct {
@@ -33,6 +37,9 @@ func (pr *PutResponse) Status() ResponseStatus {
 type AppendRequest struct {
 	Key   string
 	Value string
+
+	ClientID  int64
+	RequestID int64
 }
 
 type AppendResponse struct {
@@ -47,6 +54,9 @@ func (ar *AppendResponse) Status() ResponseStatus {
 
 type GetRequest struct {
 	Key string
+
+	ClientID  int64
+	RequestID int64
 }
 
 type GetResponse struct {
@@ -63,6 +73,9 @@ type CASRequest struct {
 	Key          string
 	CompareValue string
 	Value        string
+
+	ClientID  int64
+	RequestID int64
 }
 
 type CASResponse struct {
@@ -82,13 +95,15 @@ const (
 	StatusOK
 	StatusNotLeader
 	StatusFailedCommit
+	StatusDuplicateRequest
 )
 
 var responseName = map[ResponseStatus]string{
-	StatusInvalid:      "invalid",
-	StatusOK:           "OK",
-	StatusNotLeader:    "NotLeader",
-	StatusFailedCommit: "FailedCommit",
+	StatusInvalid:          "invalid",
+	StatusOK:               "OK",
+	StatusNotLeader:        "NotLeader",
+	StatusFailedCommit:     "FailedCommit",
+	StatusDuplicateRequest: "DuplicateRequest",
 }
 
 func (rs ResponseStatus) String() string {

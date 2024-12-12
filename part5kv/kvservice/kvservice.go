@@ -44,6 +44,12 @@ type KVService struct {
 	// srv is the HTTP server exposed by the service to the external world.
 	srv *http.Server
 
+	// lastRequestIDPerClient helps de-duplicate client requests. It stores the
+	// last request ID that was applied by the updater per client; the assumption
+	// is that client IDs are unique (keys in this map), and for each client the
+	// requests IDs (values in this map) are unique and monotonically increasing.
+	lastRequestIDPerClient map[int64]int64
+
 	// delayNextHTTPResponse will be on when the service was requested to
 	// delay its next HTTP response to the client. This flips back to off after
 	// use.
@@ -67,11 +73,12 @@ func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVS
 	rs := raft.NewServer(id, peerIds, storage, readyChan, commitChan)
 	rs.Serve()
 	kvs := &KVService{
-		id:         id,
-		rs:         rs,
-		commitChan: commitChan,
-		ds:         NewDataStore(),
-		commitSubs: make(map[int]chan raft.CommitEntry),
+		id:                     id,
+		rs:                     rs,
+		commitChan:             commitChan,
+		ds:                     NewDataStore(),
+		commitSubs:             make(map[int]chan raft.CommitEntry),
+		lastRequestIDPerClient: make(map[int64]int64),
 	}
 
 	kvs.runUpdater()
@@ -162,10 +169,12 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	// Submit a command into the Raft server; this is the state change in the
 	// replicated state machine built on top of the Raft log.
 	cmd := Command{
-		Kind:  CommandPut,
-		Key:   pr.Key,
-		Value: pr.Value,
-		Id:    kvs.id,
+		Kind:      CommandPut,
+		Key:       pr.Key,
+		Value:     pr.Value,
+		ServiceID: kvs.id,
+		ClientID:  pr.ClientID,
+		RequestID: pr.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	// If we're not the Raft leader, send an appropriate status
@@ -188,7 +197,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 		// this means we lost leadership at some point and should return an error
 		// to the client.
 		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+		if entryCmd.ServiceID == kvs.id {
 			kvs.sendHTTPResponse(w, api.PutResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
@@ -213,10 +222,12 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 	// Submit a command into the Raft server; this is the state change in the
 	// replicated state machine built on top of the Raft log.
 	cmd := Command{
-		Kind:  CommandAppend,
-		Key:   ar.Key,
-		Value: ar.Value,
-		Id:    kvs.id,
+		Kind:      CommandAppend,
+		Key:       ar.Key,
+		Value:     ar.Value,
+		ServiceID: kvs.id,
+		ClientID:  ar.ClientID,
+		RequestID: ar.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	// If we're not the Raft leader, send an appropriate status
@@ -239,7 +250,7 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 		// this means we lost leadership at some point and should return an error
 		// to the client.
 		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+		if entryCmd.ServiceID == kvs.id {
 			kvs.sendHTTPResponse(w, api.AppendResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
@@ -264,9 +275,11 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	kvs.kvlog("HTTP GET %v", gr)
 
 	cmd := Command{
-		Kind: CommandGet,
-		Key:  gr.Key,
-		Id:   kvs.id,
+		Kind:      CommandGet,
+		Key:       gr.Key,
+		ServiceID: kvs.id,
+		ClientID:  gr.ClientID,
+		RequestID: gr.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	// If we're not the Raft leader, send an appropriate status
@@ -289,7 +302,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		// this means we lost leadership at some point and should return an error
 		// to the client.
 		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+		if entryCmd.ServiceID == kvs.id {
 			kvs.sendHTTPResponse(w, api.GetResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
@@ -316,7 +329,9 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 		Key:          cr.Key,
 		Value:        cr.Value,
 		CompareValue: cr.CompareValue,
-		Id:           kvs.id,
+		ServiceID:    kvs.id,
+		ClientID:     cr.ClientID,
+		RequestID:    cr.RequestID,
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	if logIndex < 0 {
@@ -329,7 +344,7 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	select {
 	case entry := <-sub:
 		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+		if entryCmd.ServiceID == kvs.id {
 			kvs.sendHTTPResponse(w, api.CASResponse{
 				RespStatus: api.StatusOK,
 				KeyFound:   entryCmd.ResultFound,
@@ -350,33 +365,53 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
+			// TODO: why send entry on the channel, and not just the command?
 			cmd := entry.Command.(Command)
 
-			switch cmd.Kind {
-			case CommandGet:
-				cmd.ResultValue, cmd.ResultFound = kvs.ds.Get(cmd.Key)
-			case CommandPut:
-				cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
-			case CommandAppend:
-				cmd.ResultValue, cmd.ResultFound = kvs.ds.Append(cmd.Key, cmd.Value)
-			case CommandCAS:
-				cmd.ResultValue, cmd.ResultFound = kvs.ds.CAS(cmd.Key, cmd.CompareValue, cmd.Value)
-			default:
-				panic(fmt.Errorf("unexpected command %v", cmd))
-			}
+			var responseEntry raft.CommitEntry
 
-			// We're modifying the command to include results from the datastore,
-			// so clone an entry with the update command for the subscribers.
-			newEntry := raft.CommitEntry{
-				Command: cmd,
-				Index:   entry.Index,
-				Term:    entry.Term,
+			// Duplicate command detection.
+			lastReqID, ok := kvs.lastRequestIDPerClient[cmd.ClientID]
+			if ok && lastReqID >= cmd.RequestID {
+				kvs.kvlog("duplicate request id=%v, from client id=%v", cmd.RequestID, cmd.ClientID)
+				// Duplicate: this request ID was already applied in hte past!
+				responseEntry = raft.CommitEntry{
+					Command: Command{
+						Kind:        cmd.Kind,
+						IsDuplicate: true,
+					},
+					Index: entry.Index,
+					Term:  entry.Term,
+				}
+			} else {
+				kvs.lastRequestIDPerClient[cmd.ClientID] = cmd.RequestID
+
+				switch cmd.Kind {
+				case CommandGet:
+					cmd.ResultValue, cmd.ResultFound = kvs.ds.Get(cmd.Key)
+				case CommandPut:
+					cmd.ResultValue, cmd.ResultFound = kvs.ds.Put(cmd.Key, cmd.Value)
+				case CommandAppend:
+					cmd.ResultValue, cmd.ResultFound = kvs.ds.Append(cmd.Key, cmd.Value)
+				case CommandCAS:
+					cmd.ResultValue, cmd.ResultFound = kvs.ds.CAS(cmd.Key, cmd.CompareValue, cmd.Value)
+				default:
+					panic(fmt.Errorf("unexpected command %v", cmd))
+				}
+
+				// We're modifying the command to include results from the datastore,
+				// so clone an entry with the update command for the subscribers.
+				responseEntry = raft.CommitEntry{
+					Command: cmd,
+					Index:   entry.Index,
+					Term:    entry.Term,
+				}
 			}
 
 			// Forward this entry to the subscriber interested in its index, and
 			// close the subscription - it's single-use.
 			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
-				sub <- newEntry
+				sub <- responseEntry
 				close(sub)
 			}
 		}

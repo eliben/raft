@@ -29,7 +29,14 @@ type KVClient struct {
 	// generality.
 	assumedLeader int
 
-	clientID int32
+	// clientID is a unique identifier for a client; it's managed internally
+	// in this file by incrementing the clientCount global.
+	clientID int64
+
+	// requestID is a unique identifier for a request a specific client makes;
+	// each client manages its own requestID, and increments it monotinically and
+	// atomically each time the user asks to send a new request.
+	requestID atomic.Int64
 }
 
 // New creates a new KVClient. serviceAddrs is the addresses (each a string
@@ -43,17 +50,24 @@ func New(serviceAddrs []string) *KVClient {
 	}
 }
 
-// clientCount is used internally for debugging
-var clientCount atomic.Int32
+// clientCount is used to assign unique identifiers to distinct clients.
+var clientCount atomic.Int64
 
 // Put the key=value pair into the store. Returns an error, or
 // (prevValue, keyFound, false), where keyFound specifies whether the key was
 // found in the store prior to this command, and prevValue is its previous
 // value if it was found.
 func (c *KVClient) Put(ctx context.Context, key string, value string) (string, bool, error) {
+	// Each request gets a unique ID, which is a combination of client ID and
+	// request ID within this client. The struct with this ID is passed to s.send,
+	// which may retry the request multiple times until succeeding. The unique ID
+	// within each request helps the service de-duplicate requests that may
+	// arrive multiple times due to network issues and client retries.
 	putReq := api.PutRequest{
-		Key:   key,
-		Value: value,
+		Key:       key,
+		Value:     value,
+		ClientID:  c.clientID,
+		RequestID: c.requestID.Add(1),
 	}
 	var putResp api.PutResponse
 	err := c.send(ctx, "put", putReq, &putResp)
@@ -66,8 +80,10 @@ func (c *KVClient) Put(ctx context.Context, key string, value string) (string, b
 // value if it was found.
 func (c *KVClient) Append(ctx context.Context, key string, value string) (string, bool, error) {
 	appendReq := api.AppendRequest{
-		Key:   key,
-		Value: value,
+		Key:       key,
+		Value:     value,
+		ClientID:  c.clientID,
+		RequestID: c.requestID.Add(1),
 	}
 	var appendResp api.AppendResponse
 	err := c.send(ctx, "append", appendReq, &appendResp)
@@ -79,7 +95,9 @@ func (c *KVClient) Append(ctx context.Context, key string, value string) (string
 // the store, and value is its value.
 func (c *KVClient) Get(ctx context.Context, key string) (string, bool, error) {
 	getReq := api.GetRequest{
-		Key: key,
+		Key:       key,
+		ClientID:  c.clientID,
+		RequestID: c.requestID.Add(1),
 	}
 	var getResp api.GetResponse
 	err := c.send(ctx, "get", getReq, &getResp)
@@ -95,6 +113,8 @@ func (c *KVClient) CAS(ctx context.Context, key string, compare string, value st
 		Key:          key,
 		CompareValue: compare,
 		Value:        value,
+		ClientID:     c.clientID,
+		RequestID:    c.requestID.Add(1),
 	}
 	var casResp api.CASResponse
 	err := c.send(ctx, "cas", casReq, &casResp)
@@ -151,6 +171,9 @@ FindLeader:
 		case api.StatusFailedCommit:
 			retryCtxCancel()
 			return fmt.Errorf("commit failed; please retry")
+		case api.StatusDuplicateRequest:
+			retryCtxCancel()
+			return fmt.Errorf("this request was already completed")
 		default:
 			panic("unreachable")
 		}
