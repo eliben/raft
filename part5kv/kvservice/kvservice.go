@@ -366,7 +366,6 @@ func (kvs *KVService) runUpdater() {
 	go func() {
 		for entry := range kvs.commitChan {
 			cmd := entry.Command.(Command)
-			var responseCommand Command
 
 			// Duplicate command detection.
 			// Only accept this request if its ID is higher than the last request from
@@ -374,8 +373,8 @@ func (kvs *KVService) runUpdater() {
 			lastReqID, ok := kvs.lastRequestIDPerClient[cmd.ClientID]
 			if ok && lastReqID >= cmd.RequestID {
 				kvs.kvlog("duplicate request id=%v, from client id=%v", cmd.RequestID, cmd.ClientID)
-				// Duplicate: this request ID was already applied in hte past!
-				responseCommand = Command{
+				// Duplicate: this request ID was already applied in the past!
+				cmd = Command{
 					Kind:        cmd.Kind,
 					IsDuplicate: true,
 				}
@@ -394,13 +393,12 @@ func (kvs *KVService) runUpdater() {
 				default:
 					panic(fmt.Errorf("unexpected command %v", cmd))
 				}
-				responseCommand = cmd
 			}
 
 			// Forward this command to the subscriber interested in its index, and
 			// close the subscription - it's single-use.
 			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
-				sub <- responseCommand
+				sub <- cmd
 				close(sub)
 			}
 		}

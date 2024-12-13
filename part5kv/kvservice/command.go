@@ -61,10 +61,10 @@ type Command struct {
 	// ClientID and RequestID uniquely identify the request+client.
 	ClientID, RequestID int64
 
-	// IsDuplicate is used to maek the command as a duplicate by the updater.
-	// When the updater notices a command that has a duplicate client+request
-	// ID to one that has already been executed, the command is not applied to
-	// the datastore; instead, IsDuplicate is set to true.
+	// IsDuplicate is used to mark the command as a duplicate by the updater. When
+	// the updater notices a command that has a client+request ID that has already
+	// been executed, the command is not applied to the datastore; instead,
+	// IsDuplicate is set to true.
 	IsDuplicate bool
 }
 
