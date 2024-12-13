@@ -35,7 +35,7 @@ type KVService struct {
 
 	// commitSubs are the commit subscriptions currently active in this service.
 	// See the createCommitSubscription method for more details.
-	commitSubs map[int]chan raft.CommitEntry
+	commitSubs map[int]chan Command
 
 	// ds is the underlying data store implementing the KV DB.
 	ds *DataStore
@@ -69,7 +69,7 @@ func New(id int, peerIds []int, storage raft.Storage, readyChan <-chan any) *KVS
 		rs:                   rs,
 		commitChan:           commitChan,
 		ds:                   NewDataStore(),
-		commitSubs:           make(map[int]chan raft.CommitEntry),
+		commitSubs:           make(map[int]chan Command),
 		httpResponsesEnabled: true,
 	}
 
@@ -178,16 +178,15 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	// also select on the request context - if the request is canceled, this
 	// handler aborts without sending data back to the client.
 	select {
-	case entry := <-sub:
+	case commitCmd := <-sub:
 		// If this is our command, all is good! If it's some other server's command,
 		// this means we lost leadership at some point and should return an error
 		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+		if commitCmd.Id == kvs.id {
 			kvs.sendHTTPResponse(w, api.PutResponse{
 				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
+				KeyFound:   commitCmd.ResultFound,
+				PrevValue:  commitCmd.ResultValue,
 			})
 		} else {
 			kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusFailedCommit})
@@ -197,9 +196,9 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// The details of these handlers are very similar to handlePut: refer to that
+// function for detailed comments.
 func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
-	// The details of this handler are very similar to handleGet: refer to that
-	// function for detailed comments.
 	gr := &api.GetRequest{}
 	if err := readRequestJSON(req, gr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -213,31 +212,20 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 		Id:   kvs.id,
 	}
 	logIndex := kvs.rs.Submit(cmd)
-	// If we're not the Raft leader, send an appropriate status
 	if logIndex < 0 {
 		kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
-	// Subsribe for a commit update for our log index. Then wait for it to
-	// be delivered.
 	sub := kvs.createCommitSubscription(logIndex)
 
-	// Wait on the sub channel: the updater will deliver a value when the Raft
-	// log has a commit at logIndex. To ensure clean shutdown of the service,
-	// also select on the request context - if the request is canceled, this
-	// handler aborts without sending data back to the client.
 	select {
-	case entry := <-sub:
-		// If this is our command, all is good! If it's some other server's command,
-		// this means we lost leadership at some point and should return an error
-		// to the client.
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+	case commitCmd := <-sub:
+		if commitCmd.Id == kvs.id {
 			kvs.sendHTTPResponse(w, api.GetResponse{
 				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				Value:      entryCmd.ResultValue,
+				KeyFound:   commitCmd.ResultFound,
+				Value:      commitCmd.ResultValue,
 			})
 		} else {
 			kvs.sendHTTPResponse(w, api.GetResponse{RespStatus: api.StatusFailedCommit})
@@ -271,13 +259,12 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	sub := kvs.createCommitSubscription(logIndex)
 
 	select {
-	case entry := <-sub:
-		entryCmd := entry.Command.(Command)
-		if entryCmd.Id == kvs.id {
+	case commitCmd := <-sub:
+		if commitCmd.Id == kvs.id {
 			kvs.sendHTTPResponse(w, api.CASResponse{
 				RespStatus: api.StatusOK,
-				KeyFound:   entryCmd.ResultFound,
-				PrevValue:  entryCmd.ResultValue,
+				KeyFound:   commitCmd.ResultFound,
+				PrevValue:  commitCmd.ResultValue,
 			})
 		} else {
 			kvs.sendHTTPResponse(w, api.CASResponse{RespStatus: api.StatusFailedCommit})
@@ -307,18 +294,10 @@ func (kvs *KVService) runUpdater() {
 				panic(fmt.Errorf("unexpected command %v", cmd))
 			}
 
-			// We're modifying the command to include results from the datastore,
-			// so clone an entry with the update command for the subscribers.
-			newEntry := raft.CommitEntry{
-				Command: cmd,
-				Index:   entry.Index,
-				Term:    entry.Term,
-			}
-
 			// Forward this entry to the subscriber interested in its index, and
 			// close the subscription - it's single-use.
 			if sub := kvs.popCommitSubscription(entry.Index); sub != nil {
-				sub <- newEntry
+				sub <- cmd
 				close(sub)
 			}
 		}
@@ -331,7 +310,7 @@ func (kvs *KVService) runUpdater() {
 // an entry is committed at this index in the Raft log". The entry is delivered
 // on the returend (buffered) channel by the updater goroutine, after which
 // the channel is closed and the subscription is automatically canceled.
-func (kvs *KVService) createCommitSubscription(logIndex int) chan raft.CommitEntry {
+func (kvs *KVService) createCommitSubscription(logIndex int) chan Command {
 	kvs.Lock()
 	defer kvs.Unlock()
 
@@ -339,12 +318,12 @@ func (kvs *KVService) createCommitSubscription(logIndex int) chan raft.CommitEnt
 		panic(fmt.Sprintf("duplicate commit subscription for logIndex=%d", logIndex))
 	}
 
-	ch := make(chan raft.CommitEntry, 1)
+	ch := make(chan Command, 1)
 	kvs.commitSubs[logIndex] = ch
 	return ch
 }
 
-func (kvs *KVService) popCommitSubscription(logIndex int) chan raft.CommitEntry {
+func (kvs *KVService) popCommitSubscription(logIndex int) chan Command {
 	kvs.Lock()
 	defer kvs.Unlock()
 
