@@ -200,7 +200,7 @@ func (kvs *KVService) handlePut(w http.ResponseWriter, req *http.Request) {
 			if commitCmd.IsDuplicate {
 				// If this command is a duplicate, it wasn't executed as a result of
 				// this request. Notify the client with a special status.
-				kvs.sendHTTPResponse(w, api.CASResponse{
+				kvs.sendHTTPResponse(w, api.PutResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
@@ -248,7 +248,7 @@ func (kvs *KVService) handleAppend(w http.ResponseWriter, req *http.Request) {
 	case commitCmd := <-sub:
 		if commitCmd.ServiceID == kvs.id {
 			if commitCmd.IsDuplicate {
-				kvs.sendHTTPResponse(w, api.CASResponse{
+				kvs.sendHTTPResponse(w, api.AppendResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
@@ -293,7 +293,7 @@ func (kvs *KVService) handleGet(w http.ResponseWriter, req *http.Request) {
 	case commitCmd := <-sub:
 		if commitCmd.ServiceID == kvs.id {
 			if commitCmd.IsDuplicate {
-				kvs.sendHTTPResponse(w, api.CASResponse{
+				kvs.sendHTTPResponse(w, api.GetResponse{
 					RespStatus: api.StatusDuplicateRequest,
 				})
 			} else {
@@ -330,7 +330,7 @@ func (kvs *KVService) handleCAS(w http.ResponseWriter, req *http.Request) {
 	}
 	logIndex := kvs.rs.Submit(cmd)
 	if logIndex < 0 {
-		kvs.sendHTTPResponse(w, api.PutResponse{RespStatus: api.StatusNotLeader})
+		kvs.sendHTTPResponse(w, api.CASResponse{RespStatus: api.StatusNotLeader})
 		return
 	}
 
