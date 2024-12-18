@@ -34,7 +34,7 @@ type KVClient struct {
 	clientID int64
 
 	// requestID is a unique identifier for a request a specific client makes;
-	// each client manages its own requestID, and increments it monotinically and
+	// each client manages its own requestID, and increments it monotonically and
 	// atomically each time the user asks to send a new request.
 	requestID atomic.Int64
 }
