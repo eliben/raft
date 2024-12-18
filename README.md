@@ -8,6 +8,7 @@ algorithm in Go. It's accompanied by a series of blog posts:
 * [Part 2: Commands and log replication](https://eli.thegreenplace.net/2020/implementing-raft-part-2-commands-and-log-replication/)
 * [Part 3: Persistence and optimizations](https://eli.thegreenplace.net/2020/implementing-raft-part-3-persistence-and-optimizations/)
 * [Part 4: Key/Value database](https://eli.thegreenplace.net/2024/implementing-raft-part-4-keyvalue-database/)
+* [Part 4: exactly-once delivery](https://eli.thegreenplace.net/2024/implementing-raft-part-5-exactly-once-delivery/)
 
 Each of the `partN` directories in this repository is the complete source code
 for Part N of the blog post series (except Part 0, which is introductory and has
@@ -18,8 +19,8 @@ as possible. Each directory is completely self contained and can be read and
 understood in isolation. Using a graphical diff tool to see the deltas between
 the parts can be instructional.
 
-`part4kv` contains the code of a Key/Value DB that uses `part3` as its Raft
-implementation.
+`part4kv` and `part5kv` contain the code of a Key/Value DB that uses `part3`
+as its Raft implementation.
 
 ## How to use this repository
 
