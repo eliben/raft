@@ -374,7 +374,7 @@ func (cm *ConsensusModule) startElection() {
 
 	// Send RequestVote RPCs to all other servers concurrently.
 	for _, peerId := range cm.peerIds {
-		go func(peerId int) {
+		go func() {
 			cm.mu.Lock()
 			savedLastLogIndex, savedLastLogTerm := cm.lastLogIndexAndTerm()
 			cm.mu.Unlock()
@@ -414,7 +414,7 @@ func (cm *ConsensusModule) startElection() {
 					}
 				}
 			}
-		}(peerId)
+		}()
 	}
 
 	// Run another election timer, in case this election is not successful.
@@ -475,7 +475,7 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 	cm.mu.Unlock()
 
 	for _, peerId := range cm.peerIds {
-		go func(peerId int) {
+		go func() {
 			cm.mu.Lock()
 			ni := cm.nextIndex[peerId]
 			prevLogIndex := ni - 1
@@ -535,7 +535,7 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 					}
 				}
 			}
-		}(peerId)
+		}()
 	}
 }
 
