@@ -274,7 +274,7 @@ func (cm *ConsensusModule) startElection() {
 
 	// Send RequestVote RPCs to all other servers concurrently.
 	for _, peerId := range cm.peerIds {
-		go func(peerId int) {
+		go func() {
 			args := RequestVoteArgs{
 				Term:        savedCurrentTerm,
 				CandidateId: cm.id,
@@ -308,7 +308,7 @@ func (cm *ConsensusModule) startElection() {
 					}
 				}
 			}
-		}(peerId)
+		}()
 	}
 
 	// Run another election timer, in case this election is not successful.
@@ -368,7 +368,7 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 			Term:     savedCurrentTerm,
 			LeaderId: cm.id,
 		}
-		go func(peerId int) {
+		go func() {
 			cm.dlog("sending AppendEntries to %v: ni=%d, args=%+v", peerId, 0, args)
 			var reply AppendEntriesReply
 			if err := cm.server.Call(peerId, "ConsensusModule.AppendEntries", args, &reply); err == nil {
@@ -380,6 +380,6 @@ func (cm *ConsensusModule) leaderSendHeartbeats() {
 					return
 				}
 			}
-		}(peerId)
+		}()
 	}
 }
