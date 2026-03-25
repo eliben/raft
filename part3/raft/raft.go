@@ -474,6 +474,7 @@ func (cm *ConsensusModule) startElection() {
 	savedCurrentTerm := cm.currentTerm
 	cm.electionResetEvent = time.Now()
 	cm.votedFor = cm.id
+	cm.persistToStorage()
 	cm.dlog("becomes Candidate (currentTerm=%d); log=%v", savedCurrentTerm, cm.log)
 
 	votesReceived := 1
