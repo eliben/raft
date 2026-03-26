@@ -3,6 +3,8 @@
 package raft
 
 import (
+	"bytes"
+	"encoding/gob"
 	"testing"
 	"time"
 
@@ -655,4 +657,48 @@ func TestDisconnectAfterSubmit(t *testing.T) {
 	sleepMs(100)
 	h.CheckCommittedN(5, 3)
 	h.CheckCommittedN(6, 3)
+}
+
+// getPersistedTerm reads currentTerm from the given storage (same encoding as
+// persistToStorage).
+func getPersistedTerm(storage *MapStorage) int {
+	data, found := storage.Get("currentTerm")
+	if !found {
+		return 0
+	}
+	var term int
+	d := gob.NewDecoder(bytes.NewBuffer(data))
+	if err := d.Decode(&term); err != nil {
+		return 0
+	}
+	return term
+}
+
+func TestBug_StartElectionMissingPersist(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	// Wait for a leader to be elected and pick a non-leader to disconnect.
+	leaderId, _ := h.CheckSingleLeader()
+	victim := (leaderId + 1) % 3
+
+	h.DisconnectPeer(victim)
+
+	// Give it enough time to run a few elections (each bumps currentTerm).
+	time.Sleep(1200 * time.Millisecond)
+
+	// Read the victim's in-memory term and persisted term.
+	cm := h.cluster[victim].cm
+	cm.mu.Lock()
+	inMemoryTerm := cm.currentTerm
+	cm.mu.Unlock()
+
+	persistedTerm := getPersistedTerm(h.storage[victim])
+
+	t.Logf("server %d: in-memory term = %d, persisted term = %d", victim, inMemoryTerm, persistedTerm)
+
+	if persistedTerm < inMemoryTerm {
+		t.Errorf("persisted term (%d) is behind in-memory term (%d); "+
+			"startElection is not persisting state", persistedTerm, inMemoryTerm)
+	}
 }
