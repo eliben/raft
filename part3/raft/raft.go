@@ -533,9 +533,11 @@ func (cm *ConsensusModule) startElection() {
 func (cm *ConsensusModule) becomeFollower(term int) {
 	cm.dlog("becomes Follower with term=%d; log=%v", term, cm.log)
 	cm.state = Follower
-	cm.currentTerm = term
-	cm.votedFor = -1
-	cm.persistToStorage()
+	if term > cm.currentTerm {
+		cm.currentTerm = term
+		cm.votedFor = -1
+		cm.persistToStorage()
+	}
 	cm.electionResetEvent = time.Now()
 
 	go cm.runElectionTimer()
