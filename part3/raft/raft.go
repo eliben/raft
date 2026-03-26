@@ -535,6 +535,7 @@ func (cm *ConsensusModule) becomeFollower(term int) {
 	cm.state = Follower
 	cm.currentTerm = term
 	cm.votedFor = -1
+	cm.persistToStorage()
 	cm.electionResetEvent = time.Now()
 
 	go cm.runElectionTimer()

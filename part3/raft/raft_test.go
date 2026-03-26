@@ -702,3 +702,49 @@ func TestBug_StartElectionMissingPersist(t *testing.T) {
 			"startElection is not persisting state", persistedTerm, inMemoryTerm)
 	}
 }
+
+func TestBug_BecomeFollowerMissingPersist(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	origLeaderId, origTerm := h.CheckSingleLeader()
+
+	// Isolate the leader so the other two servers can elect a new leader in a
+	// higher term.
+	h.DisconnectPeer(origLeaderId)
+	sleepMs(350)
+
+	newLeaderId, newTerm := h.CheckSingleLeader()
+	if newTerm <= origTerm {
+		t.Fatalf("got newTerm=%d, origTerm=%d; want newTerm > origTerm", newTerm, origTerm)
+	}
+
+	// Keep the new leader from sending messages to the old one after it
+	// reconnects. This way, when the old leader comes back, it can notice the
+	// newer term and step down, but it won't later receive a fresh heartbeat
+	// that could update its stored term before we crash it.
+	h.PeerDropCallsAfterN(newLeaderId, 0)
+	defer h.PeerDontDropCalls(newLeaderId)
+
+	h.ReconnectPeer(origLeaderId)
+	sleepMs(120)
+
+	_, steppedDownTerm, isLeader := h.cluster[origLeaderId].cm.Report()
+	if isLeader {
+		t.Fatalf("server %d still thinks it's leader after reconnect", origLeaderId)
+	}
+	if steppedDownTerm != newTerm {
+		t.Fatalf("server %d has term %d after step-down; want %d", origLeaderId, steppedDownTerm, newTerm)
+	}
+
+	// Crash immediately after the old leader observes the newer term and stops
+	// leading. On restart, it should still remember that higher term. If not,
+	// it means the term change was only kept in memory and was lost on crash.
+	h.CrashPeer(origLeaderId)
+	h.RestartPeer(origLeaderId)
+
+	_, restartedTerm, _ := h.cluster[origLeaderId].cm.Report()
+	if restartedTerm != newTerm {
+		t.Fatalf("server %d restarted with term %d; want persisted higher term %d", origLeaderId, restartedTerm, newTerm)
+	}
+}
