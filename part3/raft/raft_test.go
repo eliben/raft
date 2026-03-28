@@ -748,3 +748,150 @@ func TestBug_BecomeFollowerMissingPersist(t *testing.T) {
 		t.Fatalf("server %d restarted with term %d; want persisted higher term %d", origLeaderId, restartedTerm, newTerm)
 	}
 }
+
+func TestBecomeFollowerSameTermPreservesVotedFor(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	h.CheckSingleLeader()
+
+	for i := 0; i < 3; i++ {
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.state == Follower && cm.votedFor >= 0 {
+			savedVotedFor := cm.votedFor
+			savedTerm := cm.currentTerm
+
+			cm.becomeFollower(savedTerm)
+
+			if cm.votedFor != savedVotedFor {
+				t.Errorf("becomeFollower(%d) reset votedFor from %d to %d on same-term transition",
+					savedTerm, savedVotedFor, cm.votedFor)
+			}
+			cm.mu.Unlock()
+			return
+		}
+		cm.mu.Unlock()
+	}
+	t.Fatal("no follower with votedFor >= 0 found")
+}
+
+func TestBecomeFollowerHigherTermResetsVotedFor(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	h.CheckSingleLeader()
+
+	for i := 0; i < 3; i++ {
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.state == Follower && cm.votedFor >= 0 {
+			savedTerm := cm.currentTerm
+
+			cm.becomeFollower(savedTerm + 1)
+
+			if cm.votedFor != -1 {
+				t.Errorf("becomeFollower(%d) did not reset votedFor (got %d, want -1)",
+					savedTerm+1, cm.votedFor)
+			}
+			cm.mu.Unlock()
+			return
+		}
+		cm.mu.Unlock()
+	}
+	t.Fatal("no follower with votedFor >= 0 found")
+}
+
+func TestStaleVoteReplyIgnored(t *testing.T) {
+	h := NewHarness(t, 5)
+	defer h.Shutdown()
+
+	origLeaderId, origTerm := h.CheckSingleLeader()
+
+	h.DisconnectPeer(origLeaderId)
+	sleepMs(450)
+
+	newLeaderId, newTerm := h.CheckSingleLeader()
+	if newTerm <= origTerm {
+		t.Fatalf("expected newTerm > origTerm, got %d <= %d", newTerm, origTerm)
+	}
+
+	h.DisconnectPeer(newLeaderId)
+	sleepMs(450)
+
+	h.ReconnectPeer(origLeaderId)
+	h.ReconnectPeer(newLeaderId)
+	sleepMs(450)
+
+	h.CheckSingleLeader()
+}
+
+func TestSameTermDoubleVotePrevented(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	leaderId, leaderTerm := h.CheckSingleLeader()
+
+	followerId := -1
+	for i := 0; i < 3; i++ {
+		if i == leaderId {
+			continue
+		}
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.votedFor == leaderId && cm.currentTerm == leaderTerm {
+			followerId = i
+		}
+		cm.mu.Unlock()
+		if followerId >= 0 {
+			break
+		}
+	}
+	if followerId < 0 {
+		t.Fatal("could not find a follower that voted for the leader")
+	}
+
+	otherCandidate := -1
+	for i := 0; i < 3; i++ {
+		if i != leaderId && i != followerId {
+			otherCandidate = i
+			break
+		}
+	}
+
+	cm := h.cluster[followerId].cm
+	args := RequestVoteArgs{
+		Term:         leaderTerm,
+		CandidateId:  otherCandidate,
+		LastLogIndex: -1,
+		LastLogTerm:  -1,
+	}
+	var reply RequestVoteReply
+	if err := cm.RequestVote(args, &reply); err != nil {
+		t.Fatal(err)
+	}
+
+	if reply.VoteGranted {
+		t.Errorf("follower %d granted vote to %d in term %d, but already voted for %d",
+			followerId, otherCandidate, leaderTerm, leaderId)
+	}
+}
+
+func TestElectionSafetyStress(t *testing.T) {
+	h := NewHarness(t, 5)
+	defer h.Shutdown()
+
+	for cycle := 0; cycle < 8; cycle++ {
+		leaderId, _ := h.CheckSingleLeader()
+		h.DisconnectPeer(leaderId)
+		sleepMs(350)
+
+		h.CheckSingleLeader()
+
+		h.ReconnectPeer(leaderId)
+		sleepMs(150)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	h.CheckSingleLeader()
+}
