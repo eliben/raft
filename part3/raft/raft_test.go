@@ -749,6 +749,10 @@ func TestBug_BecomeFollowerMissingPersist(t *testing.T) {
 	}
 }
 
+// A follower that receives becomeFollower with the same term it is already in
+// must keep its votedFor intact. Resetting votedFor on a same-term transition
+// would allow the node to vote twice in the same term, violating Raft's
+// vote-once-per-term safety property.
 func TestBecomeFollowerSameTermPreservesVotedFor(t *testing.T) {
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
@@ -776,6 +780,10 @@ func TestBecomeFollowerSameTermPreservesVotedFor(t *testing.T) {
 	t.Fatal("no follower with votedFor >= 0 found")
 }
 
+// A follower that transitions to a higher term must reset votedFor to -1,
+// so it is free to vote in the new term. Without this reset, the node would
+// refuse all vote requests in the new term, potentially preventing leader
+// election.
 func TestBecomeFollowerHigherTermResetsVotedFor(t *testing.T) {
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
@@ -802,6 +810,9 @@ func TestBecomeFollowerHigherTermResetsVotedFor(t *testing.T) {
 	t.Fatal("no follower with votedFor >= 0 found")
 }
 
+// After multiple leader changes, reconnected nodes with stale terms must not
+// disrupt the cluster. This tests that a formerly-partitioned leader and a
+// second leader can rejoin without causing a split-brain or election loop.
 func TestStaleVoteReplyIgnored(t *testing.T) {
 	h := NewHarness(t, 5)
 	defer h.Shutdown()
@@ -826,6 +837,9 @@ func TestStaleVoteReplyIgnored(t *testing.T) {
 	h.CheckSingleLeader()
 }
 
+// A follower that already voted for a leader in this term must reject a
+// RequestVote from a different candidate in the same term. Granting a second
+// vote would allow two leaders to be elected in the same term.
 func TestSameTermDoubleVotePrevented(t *testing.T) {
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
@@ -877,6 +891,8 @@ func TestSameTermDoubleVotePrevented(t *testing.T) {
 	}
 }
 
+// Stress test: repeatedly partition the current leader and verify that the
+// cluster always converges to exactly one leader after each disruption.
 func TestElectionSafetyStress(t *testing.T) {
 	h := NewHarness(t, 5)
 	defer h.Shutdown()
