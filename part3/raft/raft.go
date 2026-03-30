@@ -505,11 +505,11 @@ func (cm *ConsensusModule) startElection() {
 					return
 				}
 
-				if reply.Term > savedCurrentTerm {
+				if reply.Term > cm.currentTerm {
 					cm.dlog("term out of date in RequestVoteReply")
 					cm.becomeFollower(reply.Term)
 					return
-				} else if reply.Term == savedCurrentTerm {
+				} else if reply.Term == cm.currentTerm {
 					if reply.VoteGranted {
 						votesReceived += 1
 						if votesReceived*2 > len(cm.peerIds)+1 {
@@ -533,9 +533,11 @@ func (cm *ConsensusModule) startElection() {
 func (cm *ConsensusModule) becomeFollower(term int) {
 	cm.dlog("becomes Follower with term=%d; log=%v", term, cm.log)
 	cm.state = Follower
-	cm.currentTerm = term
-	cm.votedFor = -1
-	cm.persistToStorage()
+	if term > cm.currentTerm {
+		cm.currentTerm = term
+		cm.votedFor = -1
+		cm.persistToStorage()
+	}
 	cm.electionResetEvent = time.Now()
 
 	go cm.runElectionTimer()

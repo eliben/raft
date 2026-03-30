@@ -748,3 +748,166 @@ func TestBug_BecomeFollowerMissingPersist(t *testing.T) {
 		t.Fatalf("server %d restarted with term %d; want persisted higher term %d", origLeaderId, restartedTerm, newTerm)
 	}
 }
+
+// A follower that receives becomeFollower with the same term it is already in
+// must keep its votedFor intact. Resetting votedFor on a same-term transition
+// would allow the node to vote twice in the same term, violating Raft's
+// vote-once-per-term safety property.
+func TestBecomeFollowerSameTermPreservesVotedFor(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	h.CheckSingleLeader()
+
+	for i := 0; i < 3; i++ {
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.state == Follower && cm.votedFor >= 0 {
+			savedVotedFor := cm.votedFor
+			savedTerm := cm.currentTerm
+
+			cm.becomeFollower(savedTerm)
+
+			if cm.votedFor != savedVotedFor {
+				t.Errorf("becomeFollower(%d) reset votedFor from %d to %d on same-term transition",
+					savedTerm, savedVotedFor, cm.votedFor)
+			}
+			cm.mu.Unlock()
+			return
+		}
+		cm.mu.Unlock()
+	}
+	t.Fatal("no follower with votedFor >= 0 found")
+}
+
+// A follower that transitions to a higher term must reset votedFor to -1,
+// so it is free to vote in the new term. Without this reset, the node would
+// refuse all vote requests in the new term, potentially preventing leader
+// election.
+func TestBecomeFollowerHigherTermResetsVotedFor(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	h.CheckSingleLeader()
+
+	for i := 0; i < 3; i++ {
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.state == Follower && cm.votedFor >= 0 {
+			savedTerm := cm.currentTerm
+
+			cm.becomeFollower(savedTerm + 1)
+
+			if cm.votedFor != -1 {
+				t.Errorf("becomeFollower(%d) did not reset votedFor (got %d, want -1)",
+					savedTerm+1, cm.votedFor)
+			}
+			cm.mu.Unlock()
+			return
+		}
+		cm.mu.Unlock()
+	}
+	t.Fatal("no follower with votedFor >= 0 found")
+}
+
+// After multiple leader changes, reconnected nodes with stale terms must not
+// disrupt the cluster. This tests that a formerly-partitioned leader and a
+// second leader can rejoin without causing a split-brain or election loop.
+func TestStaleVoteReplyIgnored(t *testing.T) {
+	h := NewHarness(t, 5)
+	defer h.Shutdown()
+
+	origLeaderId, origTerm := h.CheckSingleLeader()
+
+	h.DisconnectPeer(origLeaderId)
+	sleepMs(450)
+
+	newLeaderId, newTerm := h.CheckSingleLeader()
+	if newTerm <= origTerm {
+		t.Fatalf("expected newTerm > origTerm, got %d <= %d", newTerm, origTerm)
+	}
+
+	h.DisconnectPeer(newLeaderId)
+	sleepMs(450)
+
+	h.ReconnectPeer(origLeaderId)
+	h.ReconnectPeer(newLeaderId)
+	sleepMs(450)
+
+	h.CheckSingleLeader()
+}
+
+// A follower that already voted for a leader in this term must reject a
+// RequestVote from a different candidate in the same term. Granting a second
+// vote would allow two leaders to be elected in the same term.
+func TestSameTermDoubleVotePrevented(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+
+	leaderId, leaderTerm := h.CheckSingleLeader()
+
+	followerId := -1
+	for i := 0; i < 3; i++ {
+		if i == leaderId {
+			continue
+		}
+		cm := h.cluster[i].cm
+		cm.mu.Lock()
+		if cm.votedFor == leaderId && cm.currentTerm == leaderTerm {
+			followerId = i
+		}
+		cm.mu.Unlock()
+		if followerId >= 0 {
+			break
+		}
+	}
+	if followerId < 0 {
+		t.Fatal("could not find a follower that voted for the leader")
+	}
+
+	otherCandidate := -1
+	for i := 0; i < 3; i++ {
+		if i != leaderId && i != followerId {
+			otherCandidate = i
+			break
+		}
+	}
+
+	cm := h.cluster[followerId].cm
+	args := RequestVoteArgs{
+		Term:         leaderTerm,
+		CandidateId:  otherCandidate,
+		LastLogIndex: -1,
+		LastLogTerm:  -1,
+	}
+	var reply RequestVoteReply
+	if err := cm.RequestVote(args, &reply); err != nil {
+		t.Fatal(err)
+	}
+
+	if reply.VoteGranted {
+		t.Errorf("follower %d granted vote to %d in term %d, but already voted for %d",
+			followerId, otherCandidate, leaderTerm, leaderId)
+	}
+}
+
+// Stress test: repeatedly partition the current leader and verify that the
+// cluster always converges to exactly one leader after each disruption.
+func TestElectionSafetyStress(t *testing.T) {
+	h := NewHarness(t, 5)
+	defer h.Shutdown()
+
+	for cycle := 0; cycle < 8; cycle++ {
+		leaderId, _ := h.CheckSingleLeader()
+		h.DisconnectPeer(leaderId)
+		sleepMs(350)
+
+		h.CheckSingleLeader()
+
+		h.ReconnectPeer(leaderId)
+		sleepMs(150)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	h.CheckSingleLeader()
+}
