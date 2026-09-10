@@ -5,6 +5,9 @@ package raft
 import "sync"
 
 // Storage is an interface implemented by stable storage providers.
+//
+// This example assumes that the sequence of Set calls in persistToStorage
+// atomically persists currentTerm, votedFor, and log together.
 type Storage interface {
 	Set(key string, value []byte)
 
